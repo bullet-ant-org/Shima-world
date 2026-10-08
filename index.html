@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#05060d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" />
+  <title>Shima World</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #05060d; color: #e9ecff; font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    .screen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(circle at 50% 30%, #1a1440, #05060d 70%); text-align: center; padding: 20px; z-index: 10; }
+    .screen.show { display: flex; }
+    h1 { margin: 0; font-size: clamp(28px, 7vh, 56px); letter-spacing: .25em; font-weight: 300; }
+    h1 b { color: #ff3d6e; font-weight: 600; }
+    p { margin: 0; opacity: .75; max-width: 520px; }
+    button { background: linear-gradient(90deg, #ff3d6e, #7a5cff); border: 0; color: #fff; font-size: 17px; padding: 12px 28px; border-radius: 8px; letter-spacing: .12em; cursor: pointer; }
+    button.alt { background: #1b1f3a; border: 1px solid #3a4075; }
+    .bar { width: min(420px, 80vw); height: 8px; background: #1b1f3a; border-radius: 4px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #00e5ff, #7a5cff); transition: width .2s; }
+    #rotate { background: #05060d; z-index: 50; }
+    @media (orientation: portrait) { #rotate { display: flex !important; } }
+    #hud { position: fixed; left: 8px; top: 8px; font: 11px/1.4 monospace; color: #9fffe0; white-space: pre; z-index: 5; pointer-events: none; text-shadow: 0 0 3px #000; }
+    #topbtns { position: fixed; right: 10px; top: 10px; display: flex; gap: 8px; z-index: 6; }
+    #topbtns button { padding: 8px 14px; font-size: 13px; }
+    #update-btn { display: none; background: linear-gradient(90deg, #00e5ff, #00b36b); }
+    #stickL, #stickR { position: fixed; bottom: 18px; width: 130px; height: 130px; border-radius: 50%; border: 2px solid #ffffff44; background: #ffffff10; z-index: 5; }
+    #stickL { left: 28px; } #stickR { right: 28px; }
+    .knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px; border-radius: 50%; background: #ffffff55; }
+    #acts { position: fixed; right: 180px; bottom: 30px; display: flex; gap: 10px; z-index: 5; }
+    #acts button { width: 64px; height: 64px; border-radius: 50%; padding: 0; font-size: 12px; }
+    #zone { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); font-size: 13px; letter-spacing: .3em; opacity: .85; z-index: 5; text-shadow: 0 0 4px #000; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <!-- Install gate: game will not run until installed as PWA -->
+  <div id="gate" class="screen">
+    <h1><b>島</b> SHIMA WORLD</h1>
+    <p id="gate-msg">Download the game to your device to play. It installs once, then loads from local storage.</p>
+    <div class="bar" id="dl-bar" style="display:none"><i id="dl-fill"></i></div>
+    <p id="dl-text"></p>
+    <button id="install-btn">DOWNLOAD GAME</button>
+    <p id="ios-hint" style="display:none">On iPhone/iPad: tap Share, then “Add to Home Screen”, then open Shima World from your home screen.</p>
+  </div>
+
+  <div id="menu" class="screen">
+    <h1><b>島</b> SHIMA WORLD</h1>
+    <button id="play-btn">CONTINUE</button>
+    <button id="gfx-btn" class="alt">GRAPHICS: ADAPTIVE</button>
+    <button id="upd-menu-btn" class="alt">CHECK FOR UPDATE</button>
+    <p id="menu-info"></p>
+  </div>
+
+  <div id="loading" class="screen"><h1>LOADING</h1><div class="bar"><i id="load-fill"></i></div><p id="load-text"></p></div>
+
+  <div id="rotate" class="screen"><h1>ROTATE DEVICE</h1><p>Shima World plays in landscape only.</p></div>
+
+  <div id="hud"></div>
+  <div id="zone"></div>
+  <div id="topbtns">
+    <button id="update-btn">UPDATE</button>
+    <button id="dbg-btn" class="alt">DEBUG</button>
+  </div>
+  <div id="stickL"><div class="knob"></div></div>
+  <div id="stickR"><div class="knob"></div></div>
+  <div id="acts"><button id="jump-btn" class="alt">JUMP</button><button id="run-btn" class="alt">RUN</button></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
