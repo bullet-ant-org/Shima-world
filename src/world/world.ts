@@ -1,6 +1,7 @@
 /** World engine: chunk streaming with rings, per-ring detail, instancing, skyline + God Island pillar LOD. */
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
+import { InstancePools, type PoolEntry } from '../rendering/instancing';
 import {
   BLOCK, BRIDGES_Z, CHUNK, CITY, CLS_H, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, cityBlock, heightAt, islandAt, lavaAt, mulberry32, noise2,
   riverX, senbonTorii, sstep, type IslandId,
@@ -16,6 +17,21 @@ class Batch {
     if (color) this.c.push(color.r, color.g, color.b);
     this.n++;
   }
+  /** Streams this batch into the shared world pool instead of creating a mesh (and a draw call) per chunk. */
+  commit(pools: InstancePools, geo: THREE.BufferGeometry, mat: THREE.Material, cast: boolean, out: PoolEntry[]): void {
+    if (!this.n) return;
+    const pool = pools.get(geo, mat, cast), handles: number[] = [];
+    const hasC = this.c.length > 0;
+    for (let i = 0; i < this.n; i++) {
+      const k = i * 7;
+      handles.push(hasC
+        ? pool.add(this.t[k], this.t[k + 1], this.t[k + 2], this.t[k + 3], this.t[k + 4], this.t[k + 5], this.t[k + 6], this.c[i * 3], this.c[i * 3 + 1], this.c[i * 3 + 2])
+        : pool.add(this.t[k], this.t[k + 1], this.t[k + 2], this.t[k + 3], this.t[k + 4], this.t[k + 5], this.t[k + 6]));
+    }
+    pool.flush();
+    out.push({ pool, handles });
+  }
+
   build(geo: THREE.BufferGeometry, mat: THREE.Material, cast = false): THREE.InstancedMesh | null {
     if (!this.n) return null;
     const m = new THREE.InstancedMesh(geo, mat, this.n);
@@ -35,7 +51,7 @@ class Batch {
   }
 }
 
-interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; border?: THREE.LineLoop }
+interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; inst: PoolEntry[]; border?: THREE.LineLoop }
 
 const NEON = [0xff3d9a, 0x25e6ff, 0xffb02e, 0x9a6bff].map((h) => new THREE.Color(h));
 const WARM = new THREE.Color(0xffc477);
@@ -43,6 +59,8 @@ const TMP = new THREE.Color();
 
 export class World {
   readonly group = new THREE.Group();
+  private pools = new InstancePools(this.group);
+  private resident: PoolEntry[] = []; // skyline + landmarks: permanent members of the same shared pools
   private chunks = new Map<string, ChunkRec>();
   private empty = new Set<string>();
   private readonly ringSegs = [24, 12, 6];
@@ -51,7 +69,7 @@ export class World {
   private sea: THREE.Mesh;
   private pillars: THREE.LOD[] = [];
   private pillarGlowMeshes: THREE.Mesh[] = [];
-  stats = { loaded: 0, ring: [0, 0, 0], builtThisFrame: 0 };
+  stats = { loaded: 0, ring: [0, 0, 0], builtThisFrame: 0, pools: 0, instances: 0 };
 
   constructor(private assets: Assets) {
     const seaGeo = new THREE.PlaneGeometry(60000, 60000); seaGeo.rotateX(-Math.PI / 2);
@@ -72,7 +90,7 @@ export class World {
       // slightly smaller than the real building so streamed-in chunks hide it without z-fighting
       batches[b.cls].add(b.x, 3, b.z, 0, (b.w / 36) * 0.96, (b.h / CLS_H[b.cls]) * 0.985, (b.d / 36) * 0.96);
     }
-    batches.forEach((bt, k) => { const m = bt.build(this.assets.bldg[k], this.assets.building); if (m) { m.frustumCulled = false; this.group.add(m); } });
+    batches.forEach((bt, k) => bt.commit(this.pools, this.assets.bldg[k], this.assets.building, false, this.resident));
   }
 
   private pillarGeo(h: number, rTop: number, rBot: number, radial: number, rows: number, erode: number, seed: number): THREE.BufferGeometry {
@@ -162,7 +180,7 @@ export class World {
       const ay = heightAt(GOD.x, GOD.z);
       [[34, 2.5], [26, 5], [18, 7.5]].forEach(([r, h]) => plates.add(GOD.x, ay + h / 2 - 0.5, GOD.z, 0, r, h, r, TMP.setRGB(0.5, 0.52, 0.56)));
       const ring = new Batch(); ring.add(GOD.x, ay + 8.2, GOD.z, 0, 15, 0.4, 15);
-      keep(ring.build(A.disc, A.pillarGlow));
+      ring.commit(this.pools, A.disc, A.pillarGlow, false, this.resident);
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 1500, 6), A.pillarGlow);
       beam.position.set(GOD.x, ay + 750, GOD.z);
       keep(beam);
@@ -202,7 +220,7 @@ export class World {
         const rx = riverX(bz);
         bridges.add(rx, Math.max(heightAt(rx - 38, bz), heightAt(rx + 38, bz)) + 0.4, bz, 0, 1, 1, 1);
       }
-      keep(bridges.build(A.bridge, A.props, true));
+      bridges.commit(this.pools, A.bridge, A.props, true, this.resident);
     }
 
     // EMBER ISLE: lava lake in the crater and a procession of giant torii climbing to the volcano
@@ -228,17 +246,17 @@ export class World {
       tori.add(gx, heightAt(gx, gz) - 0.5, gz, 0, 6, 6, 6);
     }
 
-    keep(glows.build(A.disc, A.glow));
-    keep(plates.build(A.disc, A.agents, true));
-    keep(orbs.build(A.orb, A.glow));
-    keep(tori.build(A.torii, A.props, true));
-    keep(lanterns.build(A.lantern, A.props));
-    keep(lava.build(A.disc, A.lava));
-    keep(crystals.build(A.crystalGeo, A.crystal));
-    keep(stone.build(A.rock, A.agents, true));
-    keep(glowStone.build(A.rock, A.glow));
-    keep(road.build(A.roadStrip, A.agents));
-    keep(trees.build(A.tree, A.props, true));
+    glows.commit(this.pools, A.disc, A.glow, false, this.resident);
+    plates.commit(this.pools, A.disc, A.agents, true, this.resident);
+    orbs.commit(this.pools, A.orb, A.glow, false, this.resident);
+    tori.commit(this.pools, A.torii, A.props, true, this.resident);
+    lanterns.commit(this.pools, A.lantern, A.props, false, this.resident);
+    lava.commit(this.pools, A.disc, A.lava, false, this.resident);
+    crystals.commit(this.pools, A.crystalGeo, A.crystal, false, this.resident);
+    stone.commit(this.pools, A.rock, A.agents, true, this.resident);
+    glowStone.commit(this.pools, A.rock, A.glow, false, this.resident);
+    road.commit(this.pools, A.roadStrip, A.agents, false, this.resident);
+    trees.commit(this.pools, A.tree, A.props, true, this.resident);
   }
 
   // ---- chunk streaming ----
@@ -281,6 +299,7 @@ export class World {
       if (d > rings + 1) { this.dispose(rec); this.chunks.delete(k); }
     }
     this.stats.loaded = this.chunks.size;
+    this.stats.pools = this.pools.pools; this.stats.instances = this.pools.instances;
     this.stats.ring[0] = this.stats.ring[1] = this.stats.ring[2] = 0;
     for (const r of this.chunks.values()) this.stats.ring[r.ring]++;
   }
@@ -293,7 +312,8 @@ export class World {
     let maxH = -99;
     for (let i = 0; i <= 2; i++) for (let j = 0; j <= 2; j++) maxH = Math.max(maxH, heightAt(ox + i * 64, oz + j * 64));
     if (maxH < -3) { this.empty.add(k); return; }
-    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring) };
+    const inst: PoolEntry[] = [];
+    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring, inst), inst };
     if (this.debugBorders) this.addBorder(rec);
     this.group.add(rec.group);
     this.chunks.set(k, rec);
@@ -301,8 +321,8 @@ export class World {
 
   private dispose(rec: ChunkRec): void {
     this.group.remove(rec.group);
+    for (const e of rec.inst) e.pool.remove(e.handles);
     rec.group.traverse((o) => {
-      if (o instanceof THREE.InstancedMesh) o.dispose();
       if (o.userData.ownGeo) (o as THREE.Mesh).geometry.dispose();
     });
   }
@@ -412,7 +432,8 @@ export class World {
     return g;
   }
 
-  private buildChunk(cx: number, cz: number, ring: number): THREE.Group {
+  private buildChunk(cx: number, cz: number, ring: number, inst: PoolEntry[]): THREE.Group {
+    const put = (b: Batch, geo: THREE.BufferGeometry, mat: THREE.Material, c = false) => b.commit(this.pools, geo, mat, c, inst);
     const A = this.assets;
     const grp = new THREE.Group();
     const ox = cx * CHUNK, oz = cz * CHUNK;
@@ -468,9 +489,9 @@ export class World {
           glows.add(x, 10.2, z + 0.9, 0, 1, 1, 1, WARM);
         }
       }
-      const m = roads.build(A.roadStrip, A.road); if (m) grp.add(m);
+      put(roads, A.roadStrip, A.road);
     }
-    bb.forEach((bt, k) => { const m = bt.build(A.bldg[k], A.building, cast); if (m) grp.add(m); });
+    bb.forEach((bt, k) => { put(bt, A.bldg[k], A.building, cast); });
 
     const at = (x: number, z: number, id: IslandId) => islandAt(x, z)?.id === id;
 
@@ -487,7 +508,7 @@ export class World {
         if (noise2(x * 0.012 + 9, z * 0.012) < 0.4 && rr > 0.12) continue;
         trees.add(x, y - 0.2, z, ry, s, s, s);
       }
-      const m = cedars.build(A.cedar, A.props, cast); if (m) grp.add(m);
+      put(cedars, A.cedar, A.props, cast);
     }
 
     // ---- God Island: weathered columns and boulders with glowing cores ----
@@ -506,8 +527,8 @@ export class World {
         rocks.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s * (0.7 + rnd() * 0.5), TMP.setRGB(0.45, 0.47, 0.5));
         if (i < 4) glows.add(x, y + 4 + s, z, 0, 1.4, 1.4, 1.4, NEON[1]);
       }
-      let m = cols.build(A.column, A.props, true); if (m) grp.add(m);
-      m = rocks.build(A.rock, A.agents, true); if (m) grp.add(m);
+      put(cols, A.column, A.props, true);
+      put(rocks, A.rock, A.agents, true);
     }
 
     // ---- Ember Isle: basalt spires, dead ash trees, lava glow along the streams ----
@@ -525,9 +546,9 @@ export class World {
         if (lavaAt(x, z) < 0.6 || !at(x, z, 'ember')) continue;
         lava.add(x, heightAt(x, z) + 0.35, z, rnd() * 6, 7, 0.4, 7);
       }
-      let m = basalt.build(A.column, A.props, cast); if (m) grp.add(m);
-      m = dead.build(A.deadTree, A.props, cast); if (m) grp.add(m);
-      m = lava.build(A.disc, A.lava); if (m) grp.add(m);
+      put(basalt, A.column, A.props, cast);
+      put(dead, A.deadTree, A.props, cast);
+      put(lava, A.disc, A.lava);
     }
 
     // ---- Yukigami Peaks: snow pines, ice boulders, glittering crystals ----
@@ -546,15 +567,15 @@ export class World {
         if (y < 2.8 || !at(x, z, 'snow') || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r) continue;
         ice.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s, TMP.setRGB(0.85, 0.93, 1));
       }
-      let m = pines.build(A.pine, A.props, cast); if (m) grp.add(m);
-      m = ice.build(A.rock, A.agents, true); if (m) grp.add(m);
-      m = cr.build(A.crystalGeo, A.crystal); if (m) grp.add(m);
+      put(pines, A.pine, A.props, cast);
+      put(ice, A.rock, A.agents, true);
+      put(cr, A.crystalGeo, A.crystal);
     }
 
-    let m = trees.build(A.tree, A.props, cast); if (m) grp.add(m);
-    m = tori.build(A.torii, A.props, cast); if (m) grp.add(m);
-    m = poles.build(A.pole, A.props); if (m) grp.add(m);
-    m = glows.build(A.sign, A.glow); if (m) grp.add(m);
+    put(trees, A.tree, A.props, cast);
+    put(tori, A.torii, A.props, cast);
+    put(poles, A.pole, A.props);
+    put(glows, A.sign, A.glow);
     return grp;
   }
 

@@ -320,7 +320,7 @@ export class Game {
       `${this.gr.backend}  res ${(this.dyn.scale * 100).toFixed(0)}%  shadows ${this.shadowsOn ? 'on' : 'off'}  preset ${this.profile.preset}\n` +
       `input ${f(t.input)} net ${f(t.net)} sim ${f(t.sim)} vis ${f(t.vis)} anim ${f(t.anim)} render ${f(t.render)}\n` +
       `draws ${i.calls}  tris ${(i.triangles / 1000).toFixed(0)}k  geo ${i.geometries}  tex ${i.textures}\n` +
-      `chunks ${w.loaded} (r0 ${w.ring[0]} r1 ${w.ring[1]} r2 ${w.ring[2]})  built/frame ${w.builtThisFrame}\n` +
+      `chunks ${w.loaded} (r0 ${w.ring[0]} r1 ${w.ring[1]} r2 ${w.ring[2]})  built/frame ${w.builtThisFrame}  prop pools ${w.pools} (${w.instances} instances)\n` +
       `npc ${this.npc.counts.full} near/${this.npc.counts.reduced} reduced/${this.npc.counts.recycled} recycled  cars ${this.traffic.counts.near}/${this.traffic.counts.mid}\n` +
       `players ${this.remotes.count}  pkts/s ${this.net.packetsPerSec}  rain ${(this.rainNow * 100).toFixed(0)}%  t ${this.gameTime.toFixed(1)}h\n` +
       `[DEBUG ${this.debugMode}] 1 hud · 2 wireframe · 3 chunk borders (green r0, yellow r1, red r2)`;
