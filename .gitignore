@@ -2,3 +2,12 @@ node_modules
 dist
 *.zip
 .DS_Store
+.cache/
+.claude/
+.config/
+.npm/
+.npm-global/
+.pki/
+.ssh/
+.gitconfig
+.wget-hsts
