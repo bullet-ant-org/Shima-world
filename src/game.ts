@@ -7,11 +7,20 @@ import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/enti
 import { Input } from './core/input';
 import { Network } from './network/network';
 import { DynamicResolution, type DeviceProfile } from './core/device';
-import { blocked, heightAt, sstep, zoneAt } from './world/terrain';
+import { ISLANDS, blocked, heightAt, islandAt, sstep, zoneAt, type IslandId } from './world/terrain';
 import { kvSet } from './core/store';
 
 export interface SaveData { x: number; z: number; time: number }
 
+/** Per-island atmosphere: fog tint strength, fog distance multiplier, and whether it snows. */
+const ATMOS: Record<IslandId, { tint: THREE.Color; amt: number; fog: number; snow: boolean }> = {
+  valley: { tint: new THREE.Color(0xffc9dc), amt: 0.1, fog: 1, snow: false },
+  city: { tint: new THREE.Color(0x6a4cff), amt: 0.08, fog: 1, snow: false },
+  god: { tint: new THREE.Color(0xf0e2c0), amt: 0.35, fog: 0.8, snow: false },
+  ember: { tint: new THREE.Color(0x8a2410), amt: 0.5, fog: 0.8, snow: false },
+  snow: { tint: new THREE.Color(0xe2f0ff), amt: 0.5, fog: 0.6, snow: true },
+};
+const TINT = new THREE.Color();
 const SKY_DAY = new THREE.Color(0x8fcbff), SKY_DUSK = new THREE.Color(0xff9a6b), SKY_NIGHT = new THREE.Color(0x050818);
 const SUN_DAY = new THREE.Color(0xfff2dd), SUN_DUSK = new THREE.Color(0xff9d5c), MOON = new THREE.Color(0x7d9cff);
 
@@ -40,6 +49,8 @@ export class Game {
 
   gameTime = 17.2;            // hours, 0..24
   private camYaw = 0; private camPitch = 0.28;
+  camDist = 7.5; // third-person distance (raised by dev tooling for overview shots)
+  setCam(yaw: number, pitch: number): void { this.camYaw = yaw; this.camPitch = pitch; }
   private last = 0; private hudAcc = 0; private saveAcc = 0;
   private shadowsOn: boolean;
   private shadowGood = 0;
@@ -49,6 +60,9 @@ export class Game {
   private hud = document.getElementById('hud')!;
   private zoneEl = document.getElementById('zone')!;
   private lastZone = '';
+  private zoneId: IslandId = 'valley';
+  private atm = { amt: 0.1, fog: 1, color: new THREE.Color(0xffc9dc) };
+  private snowing = false;
 
   constructor(private canvas: HTMLCanvasElement, private profile: DeviceProfile) {
     this.dyn = new DynamicResolution(profile.q.resScale);
@@ -65,9 +79,10 @@ export class Game {
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
 
-    this.player = new Player(this.assets);
-    if (save) { this.player.x = save.x; this.player.z = save.z; this.gameTime = save.time; }
-    this.player.y = Math.max(0.5, heightAt(this.player.x, this.player.z));
+    // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
+    const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
+    this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn);
+    if (save) this.gameTime = save.time;
     this.scene.add(this.player.group);
 
     this.npc = new NpcSystem(q.npc, this.assets);
@@ -113,6 +128,16 @@ export class Game {
     this.gr.setAnimationLoop((t) => this.frame(t));
   }
 
+  /** Fast travel (test tool): jump to an island's spawn point and stream its terrain before the next frame. */
+  teleportTo(index: number): void {
+    const isl = ISLANDS[index];
+    if (!isl) return;
+    this.player.teleport(isl.spawn.x, isl.spawn.z);
+    this.camYaw = 0; this.camPitch = 0.28;
+    this.camera.position.set(this.player.x, this.player.y + 6, this.player.z + 8);
+    for (let i = 0; i < 40; i++) this.world.update(this.player.x, this.player.z, 0, 0, this.profile.q.viewRings, this.camera, 6);
+  }
+
   currentSave(): SaveData { return { x: this.player.x, z: this.player.z, time: this.gameTime }; }
 
   setDebug(mode: number): void {
@@ -132,6 +157,7 @@ export class Game {
 
     // 1. input
     this.input.poll();
+    for (let i = 0; i < ISLANDS.length; i++) if (this.input.wasPressed('Digit' + (i + 1))) this.teleportTo(i);
     if (this.input.wasPressed('F3')) this.setDebug((this.debugMode + 1) % 4);
     lap('input');
 
@@ -154,7 +180,7 @@ export class Game {
     lap('vis');
 
     // 5. animation / camera
-    this.player.sync();
+    this.player.sync(dt);
     this.updateCamera(dt);
     lap('anim');
 
@@ -189,14 +215,15 @@ export class Game {
     if (I.jump && P.grounded) { P.vy = 7.5; P.grounded = false; }
     P.vy -= 22 * dt; P.y += P.vy * dt;
     if (P.y <= ground) { P.y = ground; P.vy = 0; P.grounded = true; }
-    // zone banner
-    const z = zoneAt(P.x, P.z);
-    const name = z === 'god' ? 'GOD ISLAND' : z === 'city' ? 'CYBER CITY' : z === 'valley' ? (Math.hypot(P.x + 120, P.z - 60) < 100 ? 'SAKURA VALLEY — VILLAGE' : 'SAKURA VALLEY') : '';
+    // zone banner + atmosphere target
+    const isl = zoneAt(P.x, P.z) === 'sea' ? null : islandAt(P.x, P.z);
+    const name = isl ? isl.name : '';
     if (name !== this.lastZone) { this.lastZone = name; this.zoneEl.textContent = name; }
+    if (isl) this.zoneId = isl.id;
   }
 
   private updateCamera(dt: number): void {
-    const P = this.player, d = 7.5;
+    const P = this.player, d = this.camDist;
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
     const tx = P.x + Math.sin(this.camYaw) * cp * d, tz = P.z + Math.cos(this.camYaw) * cp * d, ty = P.y + 2.2 + sp * d;
     const k = 1 - Math.exp(-14 * dt);
@@ -215,11 +242,14 @@ export class Game {
     const night = 1 - day;
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day).lerp(SKY_DUSK, dusk * 0.7 * (1 - Math.abs(night - 0.5) * 0.4));
     const wet = 1 - this.rainNow * 0.45;
+    const A = ATMOS[this.zoneId], k = 0.02;
+    this.atm.amt += (A.amt - this.atm.amt) * k; this.atm.fog += (A.fog - this.atm.fog) * k; this.atm.color.lerp(A.tint, k);
+    sky.lerp(TINT.copy(this.atm.color).multiplyScalar(0.2 + 0.8 * day), this.atm.amt);
     sky.multiplyScalar(wet);
     (this.scene.background as THREE.Color).copy(sky);
     this.fog.color.copy(sky);
     this.fog.near = 60;
-    this.fog.far = this.profile.q.fogFar * (1 - this.rainNow * 0.55);
+    this.fog.far = this.profile.q.fogFar * this.atm.fog * (1 - this.rainNow * 0.55);
 
     const P = this.player;
     const dir = new THREE.Vector3(Math.cos(a) * 0.8, Math.max(0.12, Math.abs(elev)) , 0.45).normalize();
@@ -237,24 +267,30 @@ export class Game {
   private updateWeather(dt: number): void {
     this.rainTimer -= dt;
     if (this.rainTimer <= 0) { this.rainTarget = Math.random() < 0.4 ? 0.5 + Math.random() * 0.5 : 0; this.rainTimer = 45 + Math.random() * 90; }
-    this.rainNow += (this.rainTarget - this.rainNow) * Math.min(1, dt * 0.25);
+    const snow = ATMOS[this.zoneId].snow;
+    const target = snow ? 0.65 : this.rainTarget; // Yukigami Peaks always snows
+    if (snow !== this.snowing) {
+      this.snowing = snow;
+      (this.rain.material as THREE.LineBasicMaterial).color.set(snow ? 0xffffff : 0xaecbff);
+    }
+    this.rainNow += (target - this.rainNow) * Math.min(1, dt * 0.25);
     const on = this.rainNow > 0.05;
     this.rain.visible = on;
     if (!on) return;
-    (this.rain.material as THREE.LineBasicMaterial).opacity = 0.15 + 0.4 * this.rainNow;
+    (this.rain.material as THREE.LineBasicMaterial).opacity = snow ? 0.9 : 0.15 + 0.4 * this.rainNow;
     const n = Math.floor(this.rainN * this.rainNow); // distance/intensity-scaled particle count
     const cx = this.camera.position.x, cy = this.camera.position.y, cz = this.camera.position.z;
     const pos = this.rainPos, vel = this.rainVel;
     for (let i = 0; i < n; i++) {
       const j = i * 6, v = i * 3;
       vel[v + 1] += 0; // vy is a fall-speed offset
-      let y = pos[j + 1] - (55 + vel[v + 1]) * dt;
+      let y = pos[j + 1] - (snow ? 4 + vel[v + 1] * 0.12 : 55 + vel[v + 1]) * dt;
       let x = pos[j], z = pos[j + 2];
       if (y < cy - 25 || Math.abs(x - cx) > 45 || Math.abs(z - cz) > 45 || y > cy + 30) {
         x = cx + vel[v] * 0.64; z = cz + vel[v + 2] * 0.64; y = cy + 15 + (Math.random() * 25);
       }
       pos[j] = x; pos[j + 1] = y; pos[j + 2] = z;
-      pos[j + 3] = x - 0.15; pos[j + 4] = y + 1.4; pos[j + 5] = z;
+      pos[j + 3] = x - (snow ? 0.02 : 0.15); pos[j + 4] = y + (snow ? 0.12 : 1.4); pos[j + 5] = z;
     }
     (this.rain.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     this.rain.geometry.setDrawRange(0, n * 2);

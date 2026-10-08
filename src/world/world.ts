@@ -2,8 +2,8 @@
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
 import {
-  BLOCK, CHUNK, CITY, CLS_H, GOD, SEA, TORII, VILLAGE, buildVillage, cityBlock, heightAt, mulberry32, noise2, riverX, sstep, zoneAt,
-  type HouseDef,
+  BLOCK, BRIDGES_Z, CHUNK, CITY, CLS_H, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, cityBlock, heightAt, islandAt, lavaAt, mulberry32, noise2,
+  riverX, senbonTorii, sstep, type IslandId,
 } from './terrain';
 
 /** Collects transforms (and optional colours) so one InstancedMesh can be created per batch. */
@@ -45,7 +45,6 @@ export class World {
   readonly group = new THREE.Group();
   private chunks = new Map<string, ChunkRec>();
   private empty = new Set<string>();
-  private village: HouseDef[] = buildVillage();
   private readonly ringSegs = [24, 12, 6];
   debugBorders = false;
   private borderMats = [0x2cff8a, 0xffd23c, 0xff5a5a].map((c) => new THREE.LineBasicMaterial({ color: c }));
@@ -61,6 +60,7 @@ export class World {
     this.group.add(this.sea);
     this.buildSkyline();
     this.buildPillars();
+    this.buildLandmarks();
   }
 
   // ---- extreme-distance representations (always resident, a handful of draw calls) ----
@@ -125,6 +125,120 @@ export class World {
       this.group.add(lod);
       this.pillars.push(lod);
     }
+  }
+
+  // ---- resident landmarks: a handful of instanced draw calls, visible from anywhere on the map ----
+  private buildLandmarks(): void {
+    const A = this.assets;
+    const keep = (m: THREE.Object3D | null) => { if (m) { m.frustumCulled = false; this.group.add(m); } };
+    const rnd = mulberry32(2024);
+    const glows = new Batch(), plates = new Batch(), tori = new Batch(), lanterns = new Batch(), orbs = new Batch();
+    const lava = new Batch(), crystals = new Batch(), stone = new Batch(), glowStone = new Batch(), road = new Batch(), trees = new Batch();
+
+    // CITY: neon spire — striped tapering shaft, observation deck, ring lights, beacon
+    {
+      const g = new THREE.CylinderGeometry(2.5, SPIRE.r, SPIRE.h, 14, 11, false);
+      g.translate(0, SPIRE.h / 2, 0);
+      const p = g.attributes.position as THREE.BufferAttribute;
+      const col = new Float32Array(p.count * 3), c = new THREE.Color();
+      for (let i = 0; i < p.count; i++) {
+        c.set(Math.round(p.getY(i) / 40) % 2 ? 0xd8322f : 0xe9ecf5);
+        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const shaft = new THREE.Mesh(g, A.props); shaft.position.set(SPIRE.x, 3, SPIRE.z); shaft.castShadow = true;
+      keep(shaft);
+      plates.add(SPIRE.x, 3 + 300, SPIRE.z, 0, 24, 7, 24, TMP.setRGB(0.85, 0.87, 0.95));
+      plates.add(SPIRE.x, 3 + 340, SPIRE.z, 0, 14, 4, 14, TMP.setRGB(0.85, 0.2, 0.18));
+      for (let k = 1; k <= 10; k++) {
+        const h = (k / 11) * SPIRE.h, r = SPIRE.r + (2.5 - SPIRE.r) * (h / SPIRE.h) + 0.8;
+        glows.add(SPIRE.x, 3 + h, SPIRE.z, 0, r, 1.4, r, NEON[k % NEON.length]);
+      }
+      orbs.add(SPIRE.x, 3 + SPIRE.h + 4, SPIRE.z, 0, 7, 7, 7, NEON[0]);
+    }
+
+    // GOD ISLAND: stepped altar, energy beam, steles, floating slabs, ancient road
+    {
+      const ay = heightAt(GOD.x, GOD.z);
+      [[34, 2.5], [26, 5], [18, 7.5]].forEach(([r, h]) => plates.add(GOD.x, ay + h / 2 - 0.5, GOD.z, 0, r, h, r, TMP.setRGB(0.5, 0.52, 0.56)));
+      const ring = new Batch(); ring.add(GOD.x, ay + 8.2, GOD.z, 0, 15, 0.4, 15);
+      keep(ring.build(A.disc, A.pillarGlow));
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 1500, 6), A.pillarGlow);
+      beam.position.set(GOD.x, ay + 750, GOD.z);
+      keep(beam);
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2, x = GOD.x + Math.cos(a) * 255, z = GOD.z + Math.sin(a) * 255;
+        const h = 14 + rnd() * 16;
+        stone.add(x, heightAt(x, z) + h / 2 - 1, z, a, 1.7, h, 1.7, TMP.setRGB(0.55, 0.57, 0.6));
+      }
+      for (let i = 0; i < 14; i++) {
+        const a = rnd() * Math.PI * 2, r = 110 + rnd() * 330, x = GOD.x + Math.cos(a) * r, z = GOD.z + Math.sin(a) * r;
+        if (heightAt(x, z) < 4) continue;
+        const w = 10 + rnd() * 14, d = 10 + rnd() * 14, y = heightAt(x, z) + 50 + rnd() * 110, ry = rnd() * 6;
+        stone.add(x, y, z, ry, w, 3.5, d, TMP.setRGB(0.5, 0.52, 0.56));
+        glowStone.add(x, y - 2.2, z, ry, w * 0.6, 0.6, d * 0.6, NEON[1]);
+      }
+      for (let z = GOD.z + 545; z > GOD.z + 40; z -= 11) {
+        if (heightAt(GOD.x, z) < 2) continue;
+        road.add(GOD.x, heightAt(GOD.x, z) + 0.2, z, 0, 9, 1, 12, TMP.setRGB(0.42, 0.43, 0.47));
+      }
+    }
+
+    // SAKURA VALLEY: senbon torii climbing the shrine hill, stone lanterns, great sacred sakura, river bridges
+    {
+      for (const g of senbonTorii()) {
+        const y = heightAt(g.x, g.z);
+        tori.add(g.x, y, g.z, g.ry, g.s, g.s, g.s);
+        for (const side of [-1, 1]) {
+          const lx = g.x + Math.cos(g.ry) * 8.5 * side * g.s, lz = g.z - Math.sin(g.ry) * 8.5 * side * g.s;
+          const ly = heightAt(lx, lz);
+          lanterns.add(lx, ly, lz, g.ry, 1, 1, 1);
+          orbs.add(lx, ly + 2.6, lz, 0, 0.7, 0.7, 0.7, WARM);
+        }
+      }
+      trees.add(HILL.x, heightAt(HILL.x, HILL.z) - 0.5, HILL.z, 0.4, 6, 6, 6);
+      const bridges = new Batch();
+      for (const bz of BRIDGES_Z) {
+        const rx = riverX(bz);
+        bridges.add(rx, Math.max(heightAt(rx - 38, bz), heightAt(rx + 38, bz)) + 0.4, bz, 0, 1, 1, 1);
+      }
+      keep(bridges.build(A.bridge, A.props, true));
+    }
+
+    // EMBER ISLE: lava lake in the crater and a procession of giant torii climbing to the volcano
+    {
+      const vy = heightAt(VOLCANO.x, VOLCANO.z);
+      lava.add(VOLCANO.x, vy + 1.2, VOLCANO.z, 0, 30, 0.8, 30);
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5, x = 560 + (VOLCANO.x - 560) * t * 0.7 + Math.sin(t * 3) * 14, z = 1440 + (1230 - 1440) * t;
+        tori.add(x, heightAt(x, z) - 0.5, z, Math.atan2(VOLCANO.x - 560, VOLCANO.z - 1440) * 0.7, 3.6 - t * 0.9, 3.6 - t * 0.9, 3.6 - t * 0.9);
+      }
+    }
+
+    // YUKIGAMI PEAKS: crystal spire in the frozen lake, giant ice-gate on the shore
+    {
+      const ly = heightAt(LAKE.x, LAKE.z);
+      crystals.add(LAKE.x, ly - 0.5, LAKE.z, 0, 9, 22, 9, TMP.setRGB(0.75, 0.95, 1));
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * 6.283 + 0.4, r = 20 + rnd() * 14;
+        const s = 2.5 + rnd() * 4;
+        crystals.add(LAKE.x + Math.cos(a) * r, ly - 0.5, LAKE.z + Math.sin(a) * r, a, s, 7 + rnd() * 10, s, rnd() < 0.5 ? TMP.setRGB(0.7, 0.9, 1) : TMP.setRGB(0.85, 0.75, 1));
+      }
+      const gx = LAKE.x, gz = LAKE.z + LAKE.r + 60;
+      tori.add(gx, heightAt(gx, gz) - 0.5, gz, 0, 6, 6, 6);
+    }
+
+    keep(glows.build(A.disc, A.glow));
+    keep(plates.build(A.disc, A.agents, true));
+    keep(orbs.build(A.orb, A.glow));
+    keep(tori.build(A.torii, A.props, true));
+    keep(lanterns.build(A.lantern, A.props));
+    keep(lava.build(A.disc, A.lava));
+    keep(crystals.build(A.crystalGeo, A.crystal));
+    keep(stone.build(A.rock, A.agents, true));
+    keep(glowStone.build(A.rock, A.glow));
+    keep(road.build(A.roadStrip, A.agents));
+    keep(trees.build(A.tree, A.props, true));
   }
 
   // ---- chunk streaming ----
@@ -216,21 +330,43 @@ export class World {
 
   // ---- chunk contents ----
   private terrainColor(x: number, z: number, y: number, out: THREE.Color): void {
-    const c = sstep(10, 70, x);
+    const id: IslandId = islandAt(x, z)?.id ?? 'valley';
     const n = noise2(x * 0.05, z * 0.05);
-    if (z < -900) { // God Island: ancient stone with moss
-      out.setRGB(0.36 + n * 0.12, 0.4 + n * 0.1, 0.38 + n * 0.08);
-      if (y > 45) out.lerp(TMP.setRGB(0.7, 0.72, 0.76), sstep(45, 70, y));
-      return;
+    switch (id) {
+      case 'god': // ancient stone with moss, snow-white on the heights
+        out.setRGB(0.36 + n * 0.12, 0.4 + n * 0.1, 0.38 + n * 0.08);
+        if (y > 45) out.lerp(TMP.setRGB(0.7, 0.72, 0.76), sstep(45, 70, y));
+        return;
+      case 'city':
+        out.setRGB(0.09, 0.1, 0.14);
+        if (y < 2.6) out.setRGB(0.34, 0.35, 0.4); // sea wall
+        return;
+      case 'valley': {
+        out.setRGB(0.3 + n * 0.1, 0.55 + n * 0.1, 0.24);
+        if (y < 60) out.lerp(TMP.setRGB(0.95, 0.7, 0.8), sstep(0.5, 0.68, noise2(x * 0.012 + 9, z * 0.012)) * 0.28); // fallen petals under the groves
+        if (x > RICE.x0 && x < RICE.x1 && z > RICE.z0 && z < RICE.z1) { const st = Math.floor(z / 6) & 1; out.setRGB(st ? 0.5 : 0.35, st ? 0.72 : 0.62, st ? 0.28 : 0.3); }
+        if (y < 2.2) out.setRGB(0.76, 0.7, 0.5);
+        else if (y > 38) out.lerp(TMP.setRGB(0.55, 0.55, 0.58), sstep(38, 70, y));
+        return;
+      }
+      case 'ember': { // black basalt, ash, scorched rim, glowing lava streams
+        out.setRGB(0.11 + n * 0.07, 0.1 + n * 0.05, 0.11 + n * 0.05);
+        out.lerp(TMP.setRGB(0.36, 0.35, 0.37), sstep(0.55, 0.75, noise2(x * 0.03 + 5, z * 0.03)) * 0.5);
+        if (y > 90) out.lerp(TMP.setRGB(0.32, 0.1, 0.07), sstep(90, 150, y));
+        if (y < 2.4) out.setRGB(0.16, 0.15, 0.16);
+        const l = lavaAt(x, z);
+        if (l > 0) out.lerp(TMP.setRGB(1.0, 0.38, 0.08), l);
+        return;
+      }
+      case 'snow': {
+        out.setRGB(0.9 + n * 0.08, 0.94 + n * 0.05, 1);
+        if (y > 28) out.lerp(TMP.setRGB(0.38, 0.4, 0.47), sstep(0.55, 0.72, noise2(x * 0.03, z * 0.03)) * sstep(28, 60, y) * 0.8);
+        const r = Math.hypot(x - LAKE.x, z - LAKE.z);
+        if (r < LAKE.r + 22) out.lerp(TMP.setRGB(0.55, 0.8, 0.95), 1 - sstep(LAKE.r - 10, LAKE.r + 22, r)); // frozen lake
+        if (y < 2.2) out.setRGB(0.78, 0.8, 0.84);
+        return;
+      }
     }
-    // valley
-    out.setRGB(0.3 + n * 0.1, 0.55 + n * 0.1, 0.24);
-    const inRice = x > -200 && x < -30 && z > 100 && z < 260;
-    if (inRice) { const s = Math.floor(z / 6) & 1; out.setRGB(s ? 0.5 : 0.35, s ? 0.72 : 0.62, s ? 0.28 : 0.3); }
-    if (y < 2.2) out.setRGB(0.76, 0.7, 0.5);
-    else if (y > 38) out.lerp(TMP.setRGB(0.55, 0.55, 0.58), sstep(38, 70, y));
-    // city asphalt
-    if (c > 0) out.lerp(TMP.setRGB(0.09, 0.1, 0.14), c);
   }
 
   private buildTerrain(cx: number, cz: number, s: number): THREE.BufferGeometry {
@@ -289,7 +425,8 @@ export class World {
     grp.add(terrain);
     if (ring === 2) return grp; // far ring: terrain only; skyline + pillars carry the distant look
 
-    const zone = zoneAt(ox + 64, oz + 64);
+    const zone = islandAt(ox + 64, oz + 64)?.id ?? islandAt(ox, oz)?.id ?? islandAt(ox + CHUNK, oz + CHUNK)?.id
+      ?? islandAt(ox + CHUNK, oz)?.id ?? islandAt(ox, oz + CHUNK)?.id ?? 'sea';
     const cast = ring === 0;
 
     // ---- City ----
@@ -335,29 +472,25 @@ export class World {
     }
     bb.forEach((bt, k) => { const m = bt.build(A.bldg[k], A.building, cast); if (m) grp.add(m); });
 
-    // ---- Sakura Valley ----
-    if (zone === 'valley' && !hasCity) {
-      const houses = new Batch(), lanterns = new Batch();
-      for (const h of this.village) {
-        if (h.x < ox || h.x >= ox + CHUNK || h.z < oz || h.z >= oz + CHUNK) continue;
-        houses.add(h.x, heightAt(h.x, h.z), h.z, h.ry, h.s, h.s, h.s);
-        lanterns.add(h.x + Math.sin(h.ry) * 3.4 * h.s + Math.cos(h.ry) * 3.2, heightAt(h.x, h.z) + 2.8, h.z + Math.cos(h.ry) * 3.4 * h.s - Math.sin(h.ry) * 3.2, 0, 1, 1, 1, WARM);
-      }
-      for (const t of TORII) if (t.x >= ox && t.x < ox + CHUNK && t.z >= oz && t.z < oz + CHUNK) tori.add(t.x, heightAt(t.x, t.z), t.z, t.ry, t.s, t.s, t.s);
-      const nTrees = ring === 0 ? 30 : 12;
+    const at = (x: number, z: number, id: IslandId) => islandAt(x, z)?.id === id;
+
+    // ---- Sakura Valley: sakura groves on the lowlands, dark cedar forest on the mountains ----
+    if (zone === 'valley') {
+      const cedars = new Batch();
+      const nTrees = ring === 0 ? 56 : 20;
       for (let i = 0; i < nTrees; i++) {
         const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
-        const rr = rnd(), ry = rnd() * 6;
-        if (y < 2.4 || y > 60 || Math.abs(x - riverX(z)) < 22) continue;
-        if (Math.hypot(x - VILLAGE.x, z - VILLAGE.z) < 55 && rr < 0.6) continue;
-        const s = 0.8 + rnd() * 0.9;
+        const rr = rnd(), ry = rnd() * 6, s = 0.8 + rnd() * 0.9, tall = 1 + rnd() * 0.6;
+        if (y < 2.4 || y > 80 || Math.abs(x - riverX(z)) < 24 || !at(x, z, 'valley')) continue;
+        if (x > RICE.x0 - 8 && x < RICE.x1 + 8 && z > RICE.z0 - 8 && z < RICE.z1 + 8) continue;
+        if (y > 40) { cedars.add(x, y - 0.3, z, ry, s, s * tall, s); continue; }
+        if (noise2(x * 0.012 + 9, z * 0.012) < 0.4 && rr > 0.12) continue;
         trees.add(x, y - 0.2, z, ry, s, s, s);
       }
-      let m = houses.build(A.house, A.props, cast); if (m) grp.add(m);
-      m = lanterns.build(A.orb, A.glow); if (m) grp.add(m);
+      const m = cedars.build(A.cedar, A.props, cast); if (m) grp.add(m);
     }
 
-    // ---- God Island ----
+    // ---- God Island: weathered columns and boulders with glowing cores ----
     if (zone === 'god' && ring === 0) {
       const cols = new Batch(), rocks = new Batch();
       for (let i = 0; i < 16; i++) {
@@ -370,13 +503,52 @@ export class World {
         const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
         if (y < 2) continue;
         const s = 2 + rnd() * 6;
-        rocks.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s * (0.7 + rnd() * 0.5), TMP.setRGB(0.45, 0.47, 0.5).clone());
+        rocks.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s * (0.7 + rnd() * 0.5), TMP.setRGB(0.45, 0.47, 0.5));
         if (i < 4) glows.add(x, y + 4 + s, z, 0, 1.4, 1.4, 1.4, NEON[1]);
       }
       let m = cols.build(A.column, A.props, true); if (m) grp.add(m);
       m = rocks.build(A.rock, A.agents, true); if (m) grp.add(m);
-    } else if (zone === 'god') {
-      /* ring 1: terrain only on God Island; pillars carry the landmark */
+    }
+
+    // ---- Ember Isle: basalt spires, dead ash trees, lava glow along the streams ----
+    if (zone === 'ember') {
+      const basalt = new Batch(), dead = new Batch(), lava = new Batch();
+      for (let i = 0; i < (ring === 0 ? 22 : 8); i++) {
+        const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
+        const h = 3 + rnd() * 11, w = 0.8 + rnd() * 0.7, ry = rnd() * 6, dt = rnd();
+        if (y < 2.2 || !at(x, z, 'ember') || lavaAt(x, z) > 0.1) continue;
+        if (dt < 0.55) basalt.add(x, y - 1, z, ry, w, h, w, TMP.setRGB(0.3 + dt * 0.2, 0.28 + dt * 0.2, 0.32 + dt * 0.2));
+        else dead.add(x, y - 0.3, z, ry, 0.8 + dt * 0.6, 0.8 + dt * 0.6, 0.8 + dt * 0.6);
+      }
+      for (let gx = 0; gx < CHUNK; gx += 12) for (let gz = 0; gz < CHUNK; gz += 12) {
+        const x = ox + gx + rnd() * 6, z = oz + gz + rnd() * 6;
+        if (lavaAt(x, z) < 0.6 || !at(x, z, 'ember')) continue;
+        lava.add(x, heightAt(x, z) + 0.35, z, rnd() * 6, 7, 0.4, 7);
+      }
+      let m = basalt.build(A.column, A.props, cast); if (m) grp.add(m);
+      m = dead.build(A.deadTree, A.props, cast); if (m) grp.add(m);
+      m = lava.build(A.disc, A.lava); if (m) grp.add(m);
+    }
+
+    // ---- Yukigami Peaks: snow pines, ice boulders, glittering crystals ----
+    if (zone === 'snow') {
+      const pines = new Batch(), ice = new Batch(), cr = new Batch();
+      for (let i = 0; i < (ring === 0 ? 46 : 16); i++) {
+        const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
+        const s = 0.8 + rnd() * 1.1, ry = rnd() * 6, k = rnd(), dens = noise2(x * 0.01 + 3, z * 0.01);
+        if (y < 2.8 || y > 70 || !at(x, z, 'snow') || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 12) continue;
+        if (k < 0.1 && ring === 0) { cr.add(x, y - 0.2, z, ry, 0.6 + k * 8, 0.6 + k * 8, 0.6 + k * 8, NEON[1]); continue; }
+        if (dens < 0.42) continue;
+        pines.add(x, y - 0.3, z, ry, s, s * (1 + rnd() * 0.5), s);
+      }
+      if (ring === 0) for (let i = 0; i < 8; i++) {
+        const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z), s = 1.5 + rnd() * 3;
+        if (y < 2.8 || !at(x, z, 'snow') || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r) continue;
+        ice.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s, TMP.setRGB(0.85, 0.93, 1));
+      }
+      let m = pines.build(A.pine, A.props, cast); if (m) grp.add(m);
+      m = ice.build(A.rock, A.agents, true); if (m) grp.add(m);
+      m = cr.build(A.crystalGeo, A.crystal); if (m) grp.add(m);
     }
 
     let m = trees.build(A.tree, A.props, cast); if (m) grp.add(m);

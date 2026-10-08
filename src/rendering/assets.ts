@@ -1,9 +1,9 @@
-/** Shared geometry + material library. Material budget: 8 materials total for the whole world. */
+/** Shared geometry + material library. Material budget: 11 materials for the whole world + character (crystal and lava are the only emissive additions, both for island identity). */
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CLS_H } from '../world/terrain';
 
-function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+export function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   const c = new THREE.Color(hex);
   const n = g.attributes.position.count;
   const a = new Float32Array(n * 3);
@@ -11,10 +11,10 @@ function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
   return g;
 }
-function box(w: number, h: number, d: number, x: number, y: number, z: number, hex: number): THREE.BufferGeometry {
+export function box(w: number, h: number, d: number, x: number, y: number, z: number, hex: number): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); return paint(g, hex);
 }
-function cyl(rt: number, rb: number, h: number, seg: number, x: number, y: number, z: number, hex: number): THREE.BufferGeometry {
+export function cyl(rt: number, rb: number, h: number, seg: number, x: number, y: number, z: number, hex: number): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg); g.translate(x, y, z); return paint(g, hex);
 }
 
@@ -56,6 +56,8 @@ export class Assets {
   readonly agents = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
   readonly pillar = new THREE.MeshStandardMaterial({ color: 0x77808c, roughness: 0.95, flatShading: true });
   readonly pillarGlow = new THREE.MeshBasicMaterial({ color: 0x40e8ff });
+  readonly crystal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.2, flatShading: true, emissive: new THREE.Color(0x2ad0ff), emissiveIntensity: 0.3 });
+  readonly lava = new THREE.MeshBasicMaterial({ color: 0xff5a1a });
 
   // geometries (shared by every chunk)
   readonly tree: THREE.BufferGeometry;
@@ -63,6 +65,13 @@ export class Assets {
   readonly torii: THREE.BufferGeometry;
   readonly pole: THREE.BufferGeometry;
   readonly column: THREE.BufferGeometry;
+  readonly pine: THREE.BufferGeometry;
+  readonly cedar: THREE.BufferGeometry;
+  readonly deadTree: THREE.BufferGeometry;
+  readonly crystalGeo: THREE.BufferGeometry;
+  readonly lantern: THREE.BufferGeometry;
+  readonly bridge: THREE.BufferGeometry;
+  readonly disc = new THREE.CylinderGeometry(1, 1, 1, 12);
   readonly rock = new THREE.BoxGeometry(1, 1, 1);
   readonly orb = new THREE.SphereGeometry(0.4, 6, 4);
   readonly sign = new THREE.BoxGeometry(4, 1.4, 0.25);
@@ -102,6 +111,24 @@ export class Assets {
     this.pole = mergeGeometries([box(0.25, 7, 0.25, 0, 3.5, 0, 0x30333f), box(0.2, 0.2, 1.6, 0, 7, 0.8, 0x30333f)])!;
     this.column = cyl(1.1, 1.5, 1, 7, 0, 0.5, 0, 0x8d9096);
 
+    const cone = (r: number, h: number, y: number, hex: number, seg = 7) => { const g = new THREE.ConeGeometry(r, h, seg); g.translate(0, y, 0); return paint(g, hex); };
+    this.pine = mergeGeometries([cyl(0.3, 0.45, 2.5, 5, 0, 1.25, 0, 0x4a3426), cone(4, 4, 4.2, 0x1f4a3a), cone(3.1, 3.6, 6.4, 0x2a5e48), cone(2.1, 3.4, 8.5, 0xe8f2ff)])!;
+    this.cedar = mergeGeometries([cyl(0.35, 0.5, 3, 5, 0, 1.5, 0, 0x4b3524), cone(3, 14, 9, 0x1c4a2c)])!;
+    this.deadTree = mergeGeometries([
+      cyl(0.25, 0.5, 6, 5, 0, 3, 0, 0x2b2326),
+      (() => { const g = new THREE.BoxGeometry(0.2, 3, 0.2); g.rotateZ(0.9); g.translate(1, 5.5, 0); return paint(g, 0x2b2326); })(),
+      (() => { const g = new THREE.BoxGeometry(0.2, 2.6, 0.2); g.rotateZ(-0.8); g.translate(-0.9, 4.6, 0); return paint(g, 0x2b2326); })(),
+    ])!;
+    { const g = new THREE.OctahedronGeometry(1, 0); g.scale(1, 3, 1); g.translate(0, 3, 0); this.crystalGeo = paint(g, 0xa6ecff); }
+    this.lantern = mergeGeometries([
+      cyl(0.7, 0.9, 0.4, 6, 0, 0.2, 0, 0x8d9096), cyl(0.25, 0.3, 1.8, 6, 0, 1.3, 0, 0x9a9da4),
+      box(1.1, 0.9, 1.1, 0, 2.6, 0, 0xffd9a0), cone(1.1, 0.8, 3.45, 0x6c6f78, 4),
+    ])!;
+    this.bridge = mergeGeometries([
+      box(76, 0.5, 5.5, 0, 0, 0, 0x6b4a33), box(76, 0.35, 0.35, 0, 1.2, 2.6, 0xd8322f), box(76, 0.35, 0.35, 0, 1.2, -2.6, 0xd8322f),
+      ...[-36, -18, 0, 18, 36].flatMap((x) => [box(0.4, 1.3, 0.4, x, 0.65, 2.6, 0xd8322f), box(0.4, 1.3, 0.4, x, 0.65, -2.6, 0xd8322f)]),
+    ])!;
+
     for (let k = 0; k < 3; k++) {
       const H = CLS_H[k];
       const g = new THREE.BoxGeometry(36, H, 36);
@@ -120,7 +147,7 @@ export class Assets {
   }
 
   setWireframe(on: boolean): void {
-    for (const m of [this.terrain, this.props, this.building, this.road, this.agents, this.pillar]) m.wireframe = on;
+    for (const m of [this.terrain, this.props, this.building, this.road, this.agents, this.pillar, this.crystal]) m.wireframe = on;
   }
 
   /** night in 0..1 drives emissive + glow materials */
@@ -128,5 +155,7 @@ export class Assets {
     this.building.emissiveIntensity = 0.15 + 2.2 * night;
     this.glow.color.setScalar(0.35 + 0.9 * night);
     this.pillarGlow.color.setRGB(0.25 + 0.5 * night, 0.9, 1);
+    this.crystal.emissiveIntensity = 0.25 + 1.4 * night;
+    this.lava.color.setRGB(0.85 + 0.15 * night, 0.3 + 0.12 * night, 0.08);
   }
 }

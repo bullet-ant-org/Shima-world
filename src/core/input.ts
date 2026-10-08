@@ -5,6 +5,7 @@ export class Input {
   run = false; jump = false;
   private runBtn = false; private jumpBtn = false;
   private keys = new Set<string>();
+  private tapped = new Set<string>(); // key-down edges, so a quick tap between frames isn't lost
   private sticks: { el: HTMLElement; knob: HTMLElement; id: number; x: number; y: number }[] = [];
 
   constructor() {
@@ -17,7 +18,7 @@ export class Input {
     };
     hold('jump-btn', (v) => (this.jumpBtn = v));
     hold('run-btn', (v) => (this.runBtn = v));
-    window.addEventListener('keydown', (e) => this.keys.add(e.code));
+    window.addEventListener('keydown', (e) => { this.keys.add(e.code); this.tapped.add(e.code); });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
   }
 
@@ -56,5 +57,5 @@ export class Input {
     this.run = this.runBtn || k.has('ShiftLeft');
     this.jump = this.jumpBtn || k.has('Space');
   }
-  wasPressed(code: string): boolean { return this.keys.delete(code); }
+  wasPressed(code: string): boolean { return this.tapped.delete(code); }
 }

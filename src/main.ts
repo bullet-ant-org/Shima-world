@@ -2,6 +2,7 @@ import { applyPreset, PRESETS, profileDevice, type DeviceProfile } from './core/
 import { kvGet, kvSet } from './core/store';
 import { applyUpdate, checkForUpdate, isInstalledOffline, isStandalone, lockLandscape, promptInstall, registerSW, storageEstimate } from './pwa/pwa';
 import { Game, type SaveData } from './game';
+import { ISLANDS } from './world/terrain';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const screens = ['gate', 'menu', 'loading'];
@@ -39,6 +40,7 @@ async function startGame(): Promise<void> {
   const canvas = $('c') as HTMLCanvasElement;
   const save = await kvGet<SaveData>('save');
   game = new Game(canvas, profile);
+  if (dev) (window as unknown as { __game: Game }).__game = game;
   step(60, 'Building world…');
   await game.init(save);
   step(100, 'Done');
@@ -92,6 +94,14 @@ async function boot(): Promise<void> {
     if (has) setUpdateReady(); else $('menu-info').textContent = 'You have the latest version.';
   };
   $('update-btn').onclick = () => void doUpdate();
+  const travel = $('travel');
+  ISLANDS.forEach((isl, i) => {
+    const b = document.createElement('button');
+    b.textContent = `${i + 1} · ${isl.title}`;
+    b.onclick = () => { game?.teleportTo(i); travel.classList.remove('show'); };
+    travel.appendChild(b);
+  });
+  $('travel-btn').onclick = () => travel.classList.toggle('show');
   $('dbg-btn').onclick = () => game?.setDebug(((game?.debugMode ?? 0) + 1) % 4);
   $('gfx-btn').onclick = () => {
     const next = PRESETS[(PRESETS.indexOf(profile.preset) + 1) % PRESETS.length];
