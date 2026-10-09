@@ -4,7 +4,7 @@
  */
 import { PathNet, type Path } from './paths';
 import {
-  BRIDGES_Z, CHUNK, CITY_C, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, hash2, heightAt, island, mulberry32, noise2, riverX, slopeAt,
+  AIRPORT, BRIDGES_Z, CHUNK, CITY_C, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, hash2, heightAt, island, mulberry32, noise2, riverX, slopeAt,
 } from './terrain';
 import type { BuildingSpec, Tpl } from '../rendering/geo';
 
@@ -66,18 +66,40 @@ function buildCityRoads(): void {
 
 const SHOW = (t: Tpl, w: number, d: number, fl: number, pal: number, roof: number, seed: number, shop: boolean): BuildingSpec => ({ tpl: t, w, d, fl, pal, roof, seed, shop });
 
-function catalog(): { low: BuildingSpec[]; mid: BuildingSpec[]; high: BuildingSpec[] } {
-  const r = mulberry32(2718), pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)];
-  const low: BuildingSpec[] = [], mid: BuildingSpec[] = [], high: BuildingSpec[] = [];
-  for (let i = 0; i < 18; i++) low.push(SHOW(pick<Tpl>(['box', 'box', 'L', 'wedge']), pick([14, 18, 22, 26]), pick([14, 18, 22, 26]), 3 + Math.floor(r() * 7), Math.floor(r() * 8), Math.floor(r() * 8), 100 + i, r() < 0.75));
-  for (let i = 0; i < 20; i++) mid.push(SHOW(pick<Tpl>(['box', 'L', 'podium', 'round', 'wedge', 'box']), pick([20, 24, 28, 34, 38]), pick([20, 24, 28, 34, 38]), 12 + Math.floor(r() * 18), Math.floor(r() * 8), Math.floor(r() * 8), 300 + i, r() < 0.6));
-  for (let i = 0; i < 22; i++) high.push(SHOW(pick<Tpl>(['step', 'box', 'round', 'twin', 'podium', 'step']), pick([22, 26, 30, 36, 42]), pick([22, 26, 30, 36, 42]), 30 + Math.floor(r() * 44), pick([3, 3, 2, 6, 0, 7]), Math.floor(r() * 8), 500 + i, r() < 0.5));
-  return { low, mid, high };
+type Theme = 'fin' | 'ent' | 'res' | 'old' | 'com';
+const THEMES: Theme[] = ['fin', 'ent', 'res', 'old', 'com', 'fin', 'ent', 'res', 'old', 'com'];
+
+/** Themed building catalogs: every district has its own kinds of architecture, not copies of one block. */
+function catalog(): Record<Theme, BuildingSpec[]> & { low: BuildingSpec[] } {
+  const r = mulberry32(2718), pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)], ri = (a: number, b: number) => a + Math.floor(r() * (b - a + 1));
+  const S = (t: Tpl, w: number, d: number, fl: number, pal = ri(0, 7), roof = ri(0, 7), shop = false, seed = ri(1, 9999)): BuildingSpec => ({ tpl: t, w, d, fl, pal, roof, seed, shop });
+  const fin: BuildingSpec[] = [], ent: BuildingSpec[] = [], res: BuildingSpec[] = [], old: BuildingSpec[] = [], com: BuildingSpec[] = [], low: BuildingSpec[] = [];
+  for (let i = 0; i < 9; i++) fin.push(S('office', pick([24, 28, 32, 38]), pick([24, 28, 32, 38]), ri(24, 64)));
+  for (let i = 0; i < 3; i++) fin.push(S('bank', pick([34, 38]), pick([28, 32]), 6));
+  for (let i = 0; i < 4; i++) fin.push(S(pick<Tpl>(['step', 'twin', 'round', 'podium']), pick([30, 36, 42]), pick([30, 36, 42]), ri(34, 70), pick([3, 3, 2, 6, 0, 7])));
+  fin.push(S('broadcast', 30, 30, ri(42, 62)));
+  for (let i = 0; i < 6; i++) ent.push(S('club', pick([26, 30, 34]), pick([24, 28]), 4, ri(0, 3)));
+  for (let i = 0; i < 2; i++) ent.push(S('market', 48, 34, 2));
+  for (let i = 0; i < 5; i++) ent.push(S('office', pick([22, 26, 30]), pick([22, 26, 30]), ri(14, 30)));
+  for (let i = 0; i < 4; i++) ent.push(S(pick<Tpl>(['round', 'wedge', 'step', 'L']), pick([24, 30, 34]), pick([24, 30, 34]), ri(14, 36)));
+  for (let i = 0; i < 12; i++) res.push(S(pick<Tpl>(['box', 'box', 'L', 'wedge', 'podium']), pick([18, 22, 26, 30]), pick([18, 22, 26, 30]), ri(6, 16), ri(0, 7), ri(0, 7), r() < 0.5));
+  for (let i = 0; i < 5; i++) res.push(S('machiya', pick([20, 26]), pick([12, 14]), ri(2, 3), ri(0, 2)));
+  for (let i = 0; i < 4; i++) old.push(S('fortress', 52, 52, 2));
+  for (let i = 0; i < 8; i++) old.push(S('machiya', pick([20, 26, 33]), pick([12, 14]), ri(2, 3), ri(0, 2)));
+  for (let i = 0; i < 2; i++) old.push(S('market', 48, 34, 2));
+  for (let i = 0; i < 5; i++) old.push(S(pick<Tpl>(['box', 'L']), pick([18, 22]), pick([18, 22]), ri(3, 6), ri(0, 7), ri(0, 7), true));
+  for (let i = 0; i < 5; i++) com.push(S('dealer', pick([40, 46]), pick([30, 34]), 2));
+  for (let i = 0; i < 6; i++) com.push(S('office', pick([24, 30, 34]), pick([24, 30, 34]), ri(10, 24)));
+  for (let i = 0; i < 3; i++) com.push(S('club', pick([28, 32]), pick([24, 28]), 4, ri(0, 3)));
+  for (let i = 0; i < 4; i++) com.push(S(pick<Tpl>(['box', 'L', 'podium']), pick([24, 30, 36]), pick([24, 30, 36]), ri(8, 18), ri(0, 7), ri(0, 7), true));
+  for (let i = 0; i < 14; i++) low.push(S(pick<Tpl>(['box', 'box', 'L', 'wedge']), pick([14, 18, 22]), pick([14, 18, 22]), ri(3, 8), ri(0, 7), ri(0, 7), r() < 0.75));
+  for (let i = 0; i < 4; i++) low.push(S('machiya', pick([18, 22]), 12, ri(2, 3), ri(0, 2)));
+  return { fin, ent, res, old, com, low };
 }
 
 function buildCityLots(): void {
   const cat = catalog(), C = CITY_C, rng = mulberry32(31337);
-  const placed: Building[] = [];
+  const placed: Building[] = [], count: Record<string, number> = { broadcast: 0 };
   const near = (x: number, z: number, rad: number) => {
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
       for (const b of bIndex.get(Math.floor(x / BCELL) + i + ',' + (Math.floor(z / BCELL) + j)) ?? []) if (Math.hypot(b.cx - x, b.cz - z) < rad + Math.max(b.hw, b.hd) * 1.05) return true;
@@ -88,23 +110,30 @@ function buildCityLots(): void {
     const dTheta = 28 / r, off = hash2(Math.floor(r), 3) * dTheta;
     for (let a = off; a < TAU; a += dTheta * (0.9 + rng() * 0.3)) {
       const rr = r + (rng() - 0.5) * 10, x = C.x + Math.cos(a) * rr, z = C.z + Math.sin(a) * rr;
-      const dn = rr / 840, tier = dn < 0.3 ? cat.high : dn < 0.62 ? cat.mid : cat.low;
-      // downtown core mixes in mid-rises so the skyline is ragged rather than uniform
-      const list = tier === cat.high && rng() < 0.22 ? cat.mid : tier;
+      const dn = rr / 840, sector = Math.floor((((a % TAU) + TAU) % TAU) / TAU * NRAD) % NRAD;
+      // districts: the downtown core is financial/entertainment; outward, each sector keeps its own character
+      const theme: Theme = dn < 0.3 ? (rng() < 0.65 ? 'fin' : 'ent') : THEMES[sector];
+      const list = dn > 0.78 && rng() < 0.55 ? cat.low : cat[theme];
       const room = NET.edgeDist(x, z, 60);
       if (room < 6) continue;
       // use the tier's designs when they fit the lot, otherwise step down to smaller ones so tight inner blocks still fill
       const fit = (l: BuildingSpec[]) => l.filter((s) => Math.max(s.w, s.d) / 2 + 1.5 <= room);
       let fits = fit(list);
-      if (!fits.length) fits = fit(cat.mid);
+      if (!fits.length) fits = fit(cat.res);
       if (!fits.length) fits = fit(cat.low);
       if (!fits.length) continue;
+      // big signature buildings get first pick of every lot that can hold them (they'd otherwise lose to the many small designs)
+      const BIG: Record<Theme, string[]> = { old: ['fortress', 'market'], ent: ['market', 'club'], com: ['dealer'], fin: ['bank'], res: [] };
+      if (BIG[theme].length && rng() < (theme === 'old' ? 0.7 : 0.35)) { const big = fit(list.filter((q) => BIG[theme].includes(q.tpl))); if (big.length) fits = big; }
+      if (count.broadcast >= 4) fits = fits.filter((q) => q.tpl !== 'broadcast').length ? fits.filter((q) => q.tpl !== 'broadcast') : fits;
+      const lessMachiya = fits.filter((q) => q.tpl !== 'machiya' || rng() < 0.4);
+      if (lessMachiya.length) fits = lessMachiya;
       const spec = fits[Math.floor(rng() * fits.length)];
       const hr = Math.max(spec.w, spec.d) / 2;
       if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < 80 || near(x, z, hr * 1.05)) continue;
       const ry = Math.atan2(-Math.cos(a), -Math.sin(a)) + (rng() - 0.5) * 0.08;
-      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + spec.fl * 3.6 + 8 };
-      placed.push(b); BUILDINGS.push(b);
+      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'bank' ? 30 : spec.tpl === 'market' || spec.tpl === 'dealer' ? 12 : spec.tpl === 'fortress' ? 30 : spec.fl * 3.6 + 8) };
+      placed.push(b); BUILDINGS.push(b); count[spec.tpl] = (count[spec.tpl] ?? 0) + 1;
       const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b);
     }
   }
@@ -304,10 +333,59 @@ function islets(): void {
   void r;
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Sky roads (elevated, for flying traffic): a loop around downtown, ramps that descend to street level, a cross-town
+// flyover, and a long bridge to the airport. Pylons hold the decks up.
+// ---------------------------------------------------------------------------------------------------------------------
+export const skyPaths: Path[] = [];
+function skyRoads(): void {
+  const C = CITY_C;
+  const ringPts: number[][] = [];
+  for (let i = 0; i < 28; i++) { const a = (i / 28) * TAU, r = 560 + 12 * Math.sin(a * 3); ringPts.push([C.x + Math.cos(a) * r, C.z + Math.sin(a) * r, 95 + 10 * Math.sin(a * 2)]); }
+  skyPaths.push(NET.add('sky', 18, ringPts, 'city', true));
+  // three ramps: from the loop, out over the suburbs, and down onto the end of an avenue
+  for (const k of [1, 4, 7]) {
+    const pts: number[][] = [];
+    for (const [r, y] of [[560, 95], [640, 87], [715, 66], [785, 36], [838, 4.6]]) { const a = radA(k, r); pts.push([C.x + Math.cos(a) * r, C.z + Math.sin(a) * r, y]); }
+    skyPaths.push(NET.add('sky', 18, pts, 'city'));
+  }
+  // cross-town flyover passing beside the spire
+  skyPaths.push(NET.add('sky', 18, [[C.x - 560, C.z - 60, 95], [C.x - 300, C.z - 170, 118], [C.x, C.z - 200, 130], [C.x + 300, C.z - 170, 118], [C.x + 560, C.z - 60, 95]], 'city'));
+  // airport bridge: from the loop, across the sea, down onto the taxiway
+  const ax = AIRPORT.cx, az = AIRPORT.cz;
+  skyPaths.push(NET.add('sky', 18, [[C.x + 459, C.z + 321, 95], [C.x + 680, C.z + 420, 90], [C.x + 900, C.z + 560, 80], [C.x + 1050, C.z + 690, 66], [C.x + 1130, C.z + 800, 46], [C.x + 1170, C.z + 890, 22], [ax - 505, az - 56, 6.5], [ax - 500, az - 50, 5.7]], 'city'));
+  for (const p of skyPaths) {
+    for (let i = 4; i < p.n - 3; i += 11) {
+      const y = p.ys![i];
+      if (y < 12) continue;
+      const g = Math.max(heightAt(p.x[i], p.z[i]), -8);
+      prop('pylon', p.x[i], p.z[i], 0, 1, y - 1.7 - g);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Haneda Airport island: runway, taxiways, terminal, control tower, hangars, parked airliners
+// ---------------------------------------------------------------------------------------------------------------------
+function airport(): void {
+  const cx = AIRPORT.cx, cz = AIRPORT.cz;
+  NET.add('runway', 46, [[cx - 560, cz + 45], [cx, cz + 45], [cx + 560, cz + 45]], 'airport');
+  NET.add('runway', 18, [[cx - 520, cz - 50], [cx - 150, cz - 50], [cx + 250, cz - 50], [cx + 520, cz - 50]], 'airport');
+  for (const x of [-400, -90, 230]) NET.add('runway', 18, [[cx + x, cz - 50], [cx + x + 24, cz - 2], [cx + x + 10, cz + 36]], 'airport');
+  prop('terminal', cx - 110, cz - 168, 0, 1);
+  prop('airTower', cx + 160, cz - 150, 0, 1);
+  for (let i = 0; i < 3; i++) prop('hangar', cx - 440 + i * 86, cz - 160, 0, 1);
+  prop('plane0', cx - 160, cz - 84, Math.PI, 1); prop('plane1', cx - 70, cz - 84, Math.PI, 1); prop('plane2', cx + 25, cz - 84, Math.PI, 1); prop('plane0', cx + 110, cz - 84, Math.PI, 1);
+  prop('plane1', cx - 420, cz + 45, Math.PI / 2, 1);
+}
+
 let built = false;
 export function buildLayout(): void {
   if (built) return; built = true;
   buildCityRoads();
+  skyRoads();
+  airport();
   buildCityLots();
   cityFurniture();
   godIsland(); sakuraValley(); yukigami(); islets();

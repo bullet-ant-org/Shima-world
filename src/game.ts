@@ -4,6 +4,7 @@ import { GameRenderer } from './rendering/renderer';
 import { Assets } from './rendering/assets';
 import { World } from './world/world';
 import { Particles, SpeedLines, HoverRing } from './entities/fx';
+import { Sky } from './rendering/sky';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Input } from './core/input';
 import { Network } from './network/network';
@@ -35,6 +36,7 @@ export class Game {
   private player!: Player;
   private npc!: NpcSystem;
   private traffic!: TrafficSystem;
+  private skyTraffic!: TrafficSystem;
   private remotes!: RemotePlayers;
   private net = new Network();
   private input!: Input;
@@ -66,6 +68,8 @@ export class Game {
   private trail = new Particles(260, 0.55); private spirits = new Particles(160, 1.3); private dust = new Particles(160, 1.1, -1.2, 0.97);
   private speedLines = new SpeedLines(); private hoverRing = new HoverRing();
   private speedEl = document.getElementById('speedfx')!;
+  private sky!: Sky;
+  private sunDir = new THREE.Vector3(); private frameDt = 0.016;
   private zoneId: IslandId = 'valley';
   private atm = { amt: 0.1, fog: 1, light: 1, color: new THREE.Color(0xffc9dc) };
   private snowing = false;
@@ -83,6 +87,8 @@ export class Game {
     this.world = new World(this.assets);
     this.world.nearDetail = q.detailWindows;
     this.scene.add(this.world.group);
+    this.sky = new Sky(this.assets.ramp);
+    this.scene.add(this.sky.group);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
 
@@ -94,15 +100,16 @@ export class Game {
 
     this.npc = new NpcSystem(q.npc, this.assets);
     this.traffic = new TrafficSystem(q.traffic, this.assets);
+    this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky']);
     this.remotes = new RemotePlayers(this.assets);
-    this.scene.add(this.npc.mesh, this.traffic.mesh, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
+    this.scene.add(this.npc.mesh, this.traffic.group, this.skyTraffic.group, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
 
     // lighting: one directional (sun/moon) + hemisphere probe-style fill. No other dynamic lights.
     this.scene.add(this.sun, this.sun.target, this.hemi);
     this.sun.castShadow = this.shadowsOn;
     this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     const sc = this.sun.shadow.camera;
-    sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70; sc.near = 1; sc.far = 600;
+    sc.left = -110; sc.right = 110; sc.top = 110; sc.bottom = -110; sc.near = 1; sc.far = 700;
     this.sun.shadow.bias = -0.0004;
 
     // stars (visible at night)
@@ -158,6 +165,7 @@ export class Game {
   private frame(now: number): void {
     const frameMs = this.last ? now - this.last : 16.7;
     const dt = Math.min(0.05, frameMs / 1000);
+    this.frameDt = dt;
     this.last = now;
     let p = performance.now(), q = p;
     const lap = (k: string) => { q = performance.now(); this.t[k] = q - p; p = q; };
@@ -180,6 +188,7 @@ export class Game {
     this.updateWeather(dt);
     this.npc.update(dt, this.player.x, this.player.z);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
+    this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);
     lap('sim');
 
     // 4. visibility / streaming
@@ -312,10 +321,12 @@ export class Game {
     this.sun.position.set(P.x + dir.x * 220, P.y + dir.y * 220, P.z + dir.z * 220);
     this.sun.target.position.set(P.x, P.y, P.z);
     this.sun.color.copy(MOON).lerp(SUN_DAY, day).lerp(SUN_DUSK, dusk * 0.8);
-    this.sun.intensity = (0.35 + 2.1 * day) * (1 - this.rainNow * 0.5) * this.atm.light;
-    this.hemi.intensity = (0.25 + 0.75 * day) * (0.55 + 0.45 * this.atm.light);
+    this.sun.intensity = (0.6 + 2.0 * day) * (1 - this.rainNow * 0.5) * this.atm.light;
+    this.hemi.intensity = (0.5 + 0.6 * day) * (0.55 + 0.45 * this.atm.light);
     this.hemi.color.copy(sky).lerp(new THREE.Color(0xffffff), 0.35);
     this.assets.setNight(night * (0.7 + 0.3 * this.rainNow));
+    this.sunDir.set(Math.cos(a) * 0.8, elev, 0.45).normalize();
+    this.sky.update(this.frameDt, this.camera.position, sky, night, this.sunDir, this.rainNow);
     (this.stars.material as THREE.PointsMaterial).opacity = Math.max(0, night - 0.35) * (1 - this.rainNow);
     this.stars.position.copy(this.camera.position);
   }

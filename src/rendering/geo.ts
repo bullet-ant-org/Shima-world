@@ -8,7 +8,9 @@
  *   far    : simplified body with UVs for the shared window-atlas facade material (used beyond the near ring)
  */
 import * as THREE from 'three/webgpu';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../world/terrain';
+import { bakeCar, type CarModel } from './cars';
 
 type V3 = [number, number, number];
 export const hex = (h: number): V3 => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255];
@@ -106,7 +108,7 @@ export class MB {
 // ---------------------------------------------------------------------------------------------------------------------
 // City buildings
 // ---------------------------------------------------------------------------------------------------------------------
-export type Tpl = 'box' | 'L' | 'step' | 'round' | 'twin' | 'podium' | 'wedge';
+export type Tpl = 'box' | 'L' | 'step' | 'round' | 'twin' | 'podium' | 'wedge' | 'office' | 'bank' | 'club' | 'market' | 'fortress' | 'dealer' | 'machiya' | 'broadcast';
 export interface BuildingSpec { tpl: Tpl; w: number; d: number; fl: number; pal: number; roof: number; seed: number; shop: boolean }
 export interface BuildingGeo { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null; far: THREE.BufferGeometry }
 
@@ -140,6 +142,10 @@ function footprints(s: BuildingSpec): Prism[] {
     case 'twin': return [{ poly: rect(-w * 0.3, 0, w * 0.4, d * 0.85), y0: 0, fl }, { poly: rect(w * 0.3, 0, w * 0.4, d * 0.85), y0: 0, fl: Math.max(3, Math.round(fl * 0.86)) }];
     case 'podium': { const f = Math.min(4, Math.max(2, fl >> 2)); return [{ poly: rect(0, 0, w, d), y0: 0, fl: f }, { poly: rect(0, 0, w * 0.56, d * 0.56), y0: f * FH, fl: fl - f }]; }
     case 'wedge': return [{ poly: [[-w / 2, -d / 2], [w / 2, -d / 2], [0, d / 2]], y0: 0, fl }];
+    case 'market': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }];
+    case 'fortress': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }, { poly: rect(0, 0, w * 0.34, d * 0.34), y0: 2 * FH, fl: 5 }];
+    case 'broadcast': return [{ poly: rect(0, 0, 8, 8), y0: 0, fl }];
+    case 'dealer': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }];
     default: return [{ poly: rect(0, 0, w, d), y0: 0, fl }];
   }
 }
@@ -226,6 +232,214 @@ function addRoof(lit: MB, lights: MB, p: Prism, topY: number, pal: (typeof PALET
   }
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Special building types (each a different silhouette and character)
+// ---------------------------------------------------------------------------------------------------------------------
+const GLASS_TINTS: V3[] = [hex(0x3f7fa6), hex(0x2e8f9a), hex(0x3a4f7a), hex(0x6a8fb0), hex(0x7a6fb0), hex(0x2f6f8f), hex(0x4a9fb0), hex(0x5a7f9a)];
+
+type Custom = (s: BuildingSpec, lit: MB, lights: MB, r: () => number) => void;
+
+/** Curtain-wall office tower: protruding spandrels + mullions, continuous glass bands, lit floors, crown with antenna. */
+const officeBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d, fl } = s, glass = GLASS_TINTS[s.pal % GLASS_TINTS.length], frame = hex(0xd8dde6), base = hex(PALETTES[s.pal % 8].wall);
+  const lobby = 2, y1 = fl * FH;
+  lit.box(0, lobby * FH / 2, 0, w + 2, lobby * FH, d + 2, shade(base, 0.8));                          // stone plinth
+  lights.box(0, lobby * FH * 0.55, d / 2 + 1.05, w * 0.7, lobby * FH * 0.5, 0.05, WARM_LIT[1], 1);  // lobby glow
+  lit.box(0, y1 / 2 + lobby * FH / 2, 0, w, y1 - lobby * FH + 0.02, d, shade(glass, 0.7));
+  const walls: [number, number, number, number, number, number][] = [[0, d / 2, 1, 0, 0, 1], [0, -d / 2, -1, 0, 0, -1], [w / 2, 0, 0, 1, 1, 0], [-w / 2, 0, 0, -1, -1, 0]];
+  for (const [cx, cz, ux, uz, nx, nz] of walls) {
+    const L = ux !== 0 ? w : d, bays = Math.max(2, Math.round(L / 3.4)), bw = L / bays;
+    const ax = ux !== 0 ? 1 : 0, az = ux !== 0 ? 0 : 1; // along-wall axis
+    for (let f = lobby; f < fl; f++) {
+      const yc = f * FH + FH / 2;
+      lit.obox(cx + nx * 0.06, f * FH + 0.28, cz + nz * 0.06, ax, az, nx, nz, L, 0.56, 0.3, frame, 1 | 16 | 32);          // spandrel slab edge
+      lit.obox(cx + nx * 0.03, yc + 0.1, cz + nz * 0.03, ax, az, nx, nz, L - 0.3, FH - 0.8, 0.04, shade(glass, 1.15), 1);   // glass band
+      if (f % 2 === 0 && r() < 0.5) for (let b = 0; b < bays; b++) if (r() < 0.38) {
+        const t = -L / 2 + (b + 0.5) * bw;
+        lights.obox(cx + ax * t + nx * 0.075, yc + 0.1, cz + az * t + nz * 0.075, ax, az, nx, nz, bw - 0.5, FH - 1.1, 0.02, WARM_LIT[Math.floor(r() * 5)], 1);
+      }
+    }
+    for (let b = 0; b <= bays; b++) {                                                                                       // protruding mullions
+      const t = -L / 2 + b * bw;
+      lit.obox(cx + ax * t + nx * 0.12, (y1 + lobby * FH) / 2, cz + az * t + nz * 0.12, ax, az, nx, nz, 0.26, y1 - lobby * FH, 0.34, frame, 1 | 4 | 8 | 16);
+    }
+  }
+  // crown: setback glass lantern, mast, corporate neon band
+  lit.frustum(0, 0, w * 0.82, d * 0.82, w * 0.5, d * 0.5, y1, y1 + 7, shade(glass, 1.1));
+  lit.box(0, y1 + 7 + 6, 0, 1.2, 12, 1.2, hex(0x555a66)); lights.box(0, y1 + 7 + 12.4, 0, 0.9, 0.9, 0.9, hex(0xff3030));
+  const neon = NEON[Math.floor(r() * NEON.length)];
+  for (const [nx, nz, ux, uz] of [[0, 1, 1, 0], [0, -1, 1, 0], [1, 0, 0, 1], [-1, 0, 0, 1]]) lights.obox(nx * (w / 2 + 0.22), y1 - 1.4, nz * (d / 2 + 0.22), ux, uz, nx, nz, ux ? w : d, 0.5, 0.1, neon);
+  if (r() < 0.6) lit.box(w * 0.2, y1 + 1.5, d * 0.1, 5, 3, 4, hex(0x7d838f));
+};
+
+/** Neo-classical bank: columned portico, pediment, steps, bronze doors, gold lettering, rooftop dome. */
+const bankBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, h = 22, stone = hex(0xe7dfcd), stoneD = hex(0xc9bfa9), gold = hex(0xd9a441);
+  lit.box(0, -2, 0, w + 4, 4, d + 4, stoneD);
+  for (let i = 0; i < 4; i++) lit.box(0, 0.25 + i * 0.5, d / 2 + 3.5 - i * 0.45, w * 0.78 - i * 1.2, 0.5, 5 - i * 0.7, shade(stone, 0.95 + i * 0.03), 63 & ~32);
+  lit.box(0, h / 2 + 2, 0, w, h, d, stone);
+  const n = 6, cw = w * 0.74;
+  for (let i = 0; i < n; i++) { const x = -cw / 2 + (i * cw) / (n - 1); lit.cyl(x, d / 2 + 2.6, 0.95, 0.85, 2, 2 + h - 3, 12, shade(stone, 1.05)); lit.box(x, 2.2, d / 2 + 2.6, 2.3, 0.6, 2.3, stoneD); lit.box(x, h - 0.9, d / 2 + 2.6, 2.3, 0.7, 2.3, stoneD); }
+  lit.box(0, h - 0.1, d / 2 + 1.6, cw + 3, 1.6, 5.4, shade(stone, 0.92));                         // entablature
+  const pw = cw + 3, ph = 4.4, z = d / 2 + 4.3;                                                    // pediment (triangular)
+  lit.tri([-pw / 2, h + 0.7, z], [pw / 2, h + 0.7, z], [0, h + 0.7 + ph, z], hex(0xefe8d8), [0, h, z - 3]);
+  lit.tri([-pw / 2, h + 0.7, z - 5.2], [pw / 2, h + 0.7, z - 5.2], [0, h + 0.7 + ph, z - 5.2], hex(0xefe8d8), [0, h, z]);
+  lit.quad([-pw / 2, h + 0.7, z], [pw / 2, h + 0.7, z], [pw / 2, h + 0.7, z - 5.2], [-pw / 2, h + 0.7, z - 5.2], shade(stone, 0.8), [0, h, z - 2]);
+  lit.quad([-pw / 2, h + 0.7, z], [0, h + 0.7 + ph, z], [0, h + 0.7 + ph, z - 5.2], [-pw / 2, h + 0.7, z - 5.2], hex(0x8a8f9a), [0, h + 1, z - 2]);
+  lit.quad([pw / 2, h + 0.7, z], [0, h + 0.7 + ph, z], [0, h + 0.7 + ph, z - 5.2], [pw / 2, h + 0.7, z - 5.2], hex(0x8a8f9a), [0, h + 1, z - 2]);
+  lit.box(0, 4.5, d / 2 + 0.15, 5.2, 6.4, 0.3, hex(0x6a4a2a)); lights.box(0, 4.5, d / 2 + 0.34, 4.4, 5.6, 0.04, hex(0xffcf8a), 1);
+  lights.box(0, h - 1.2, d / 2 + 4.45, cw * 0.7, 0.9, 0.05, hex(0xffd36a), 1);                   // gold lettering band
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) { // tall framed windows on the flanks
+    const x = sx * (w * 0.5 - 1.5 - k * 0); void x;
+  }
+  for (const sz of [-1, 1]) for (let k = 0; k < 4; k++) for (const sx of [-1, 1]) {
+    lit.obox(sx * (w / 2 + 0.1), 11, sz * (d * 0.14 + k * 5.6) * 0.9 + (sz > 0 ? 0 : 0), 0, 1, sx, 0, 2.2, 9, 0.3, stoneD, 1 | 16 | 32 | 2);
+    lit.obox(sx * (w / 2 + 0.28), 11, sz * (d * 0.14 + k * 5.6) * 0.9, 0, 1, sx, 0, 1.6, 8, 0.04, GLASS, 1);
+    if (r() < 0.5) lights.obox(sx * (w / 2 + 0.31), 11, sz * (d * 0.14 + k * 5.6) * 0.9, 0, 1, sx, 0, 1.4, 7.6, 0.02, WARM_LIT[0], 1);
+  }
+  lit.cyl(0, 0, 6.5, 6.5, h + 2, h + 3.4, 16, stoneD); lit.cyl(0, 0, 6, 0.8, h + 3.4, h + 10, 16, hex(0x6fa38a)); lit.cyl(0, 0, 0.35, 0.35, h + 10, h + 13, 6, gold);
+};
+
+/** Nightclub: moody coloured block smothered in neon, a tall blade sign, canopy, searchlights and a rooftop DJ dome. */
+const clubBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, h = 15, body = [hex(0x3b2a6e), hex(0x1f5a78), hex(0x6a2a5a), hex(0x2a4a7a)][s.pal & 3];
+  lit.box(0, h / 2, 0, w, h, d, body);
+  lit.box(0, 0.3, 0, w + 1, 0.6, d + 1, shade(body, 0.6));
+  const a = NEON[(s.seed & 3) + 1], b = NEON[(s.seed + 2) % NEON.length];
+  for (const [nx, nz, ux, uz, L] of [[0, 1, 1, 0, w], [0, -1, 1, 0, w], [1, 0, 0, 1, d], [-1, 0, 0, 1, d]] as number[][]) {
+    lights.obox(nx * (w / 2 + 0.1) * (uz ? 1 : 0) + (uz ? nx * 0 : 0) + (nx === 0 ? 0 : nx * (w / 2 + 0.1)), h - 0.6, nz * (d / 2 + 0.1), ux, uz, nx, nz, L, 0.4, 0.1, a);
+    lights.obox(nx === 0 ? 0 : nx * (w / 2 + 0.1), 4.4, nz * (d / 2 + 0.1), ux, uz, nx, nz, L * 0.96, 0.3, 0.1, b);
+  }
+  for (let k = 0; k < Math.floor(w / 5); k++) for (let f = 0; f < 3; f++) {            // little windows
+    const x = -w / 2 + 3 + k * 5; if (f === 0 && Math.abs(x) < 4) continue;
+    lit.box(x, 6 + f * 3.2, d / 2 + 0.1, 2.4, 1.8, 0.2, hex(0x15122a), 1 | 4 | 8 | 16 | 32);
+    if (r() < 0.7) lights.box(x, 6 + f * 3.2, d / 2 + 0.22, 2, 1.4, 0.02, [a, b, WARM_LIT[2]][Math.floor(r() * 3)], 1);
+  }
+  lit.box(0, 3.4, d / 2 + 2.2, 7, 0.4, 4.4, hex(0x14122a)); lights.box(0, 3.15, d / 2 + 2.2, 6.4, 0.08, 3.8, b);   // glowing canopy
+  lights.box(0, 2, d / 2 + 0.2, 4, 3.6, 0.04, WARM_LIT[3], 1);
+  lit.box(w / 2 - 1.2, h / 2 + 5, d / 2 + 0.6, 1.8, h + 10, 0.6, hex(0x1b1633));       // blade sign
+  lights.box(w / 2 - 1.2, h / 2 + 5, d / 2 + 1.0, 1.4, h + 8, 0.06, a, 1);
+  lights.box(w / 2 - 1.2, h / 2 + 5, d / 2 + 0.2, 1.4, h + 8, 0.06, a, 2);
+  lit.cyl(-w * 0.15, 0, 4.6, 4.6, h, h + 1.2, 14, hex(0x2a2a3a)); lit.cyl(-w * 0.15, 0, 4.2, 0.4, h + 1.2, h + 5, 14, hex(0x9fb8d8));  // DJ dome
+  for (let i = 0; i < 4; i++) lights.box(-w * 0.3 + i * (w * 0.2), h + 14, 0, 0.3, 28, 0.3, [a, b][i & 1]);             // search-light beams
+};
+
+/** Covered bazaar: long gabled hall with striped market stalls, hanging lanterns, signboard. */
+const marketBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, awn = [hex(0xc8283c), hex(0xf2e9d8), hex(0x2c6f8f), hex(0xe9a23a), hex(0x3a8f5a)];
+  lit.box(0, 0.2, 0, w, 0.4, d, hex(0xb9ae98));
+  lit.box(0, 6, -d * 0.18, w * 0.96, 11, d * 0.3, hex(0xe9dfc9));                      // back hall
+  hipRoof(lit, 0, -d * 0.18, w * 0.96, d * 0.3, 11.4, 4.6, 2.4, TILE);
+  for (let row = 0; row < 2; row++) for (let i = 0; i < 9; i++) {                      // two rows of stalls in front
+    const x = -w / 2 + 4 + i * ((w - 8) / 8), z = d * (row ? 0.34 : 0.1), c = awn[(i + row * 2) % awn.length];
+    for (const px of [-1.5, 1.5]) for (const pz of [-1.2, 1.2]) lit.box(x + px, 1.8, z + pz, 0.16, 3.4, 0.16, hex(0x5a4030));
+    lit.quad([x - 1.9, 3.5, z - 1.6], [x + 1.9, 3.5, z - 1.6], [x + 1.9, 2.7, z + 1.9], [x - 1.9, 2.7, z + 1.9], c, [x, 1, z]);
+    lit.box(x, 0.9, z + 0.4, 3, 1.1, 1.0, hex(0x7a5a3a)); lit.box(x - 0.8, 1.7, z + 0.4, 0.8, 0.5, 0.6, [hex(0xe55b3c), hex(0x9bd36a), hex(0xf2c94c)][i % 3]);
+    lights.box(x, 3.2, z + 1.9, 0.5, 0.5, 0.5, [NEON[2], NEON[0], WARM_LIT[0]][(i + row) % 3]);
+  }
+  for (let i = 0; i < 18; i++) lights.box(-w / 2 + 1 + i * ((w - 2) / 17), 5.4 + Math.sin(i) * 0.4, d * 0.22, 0.45, 0.6, 0.45, [NEON[2], NEON[0], hex(0xff8a4a)][i % 3]);   // lantern strings
+  lit.box(0, 7.5, d / 2 + 0.2, w * 0.3, 3.2, 0.4, hex(0x3a2418)); lights.box(0, 7.5, d / 2 + 0.45, w * 0.26, 2.6, 0.05, hex(0xff3a3a), 1);
+  void r;
+};
+
+/** Yakuza fortress: stone-based plaster walls with tiled coping, corner turrets, a spiked neon gatehouse and a tiered keep. */
+const fortressBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, plaster = hex(0xf0e8d6), stone = hex(0x8c8f98), stoneD = hex(0x6b6e78), wallH = 5.2;
+  lit.box(0, -3, 0, w + 6, 6, d + 6, stoneD);
+  for (const [cx, cz, W, D] of [[0, d / 2, w, 1.6], [0, -d / 2, w, 1.6], [w / 2, 0, 1.6, d], [-w / 2, 0, 1.6, d]] as number[][]) {
+    lit.box(cx, 1.3, cz, W + 2, 2.6, D + 2, stone);                                                  // stone base
+    lit.box(cx, 2.6 + wallH / 2, cz, W, wallH, D, plaster);
+    lit.box(cx, 2.6 + wallH + 0.35, cz, W + 1.4, 0.7, D + 1.4, TILE);                               // tiled coping
+    lit.box(cx, 2.6 + wallH + 0.9, cz, W, 0.4, D, TILE_L);
+  }
+  lit.box(0, 0.3, 0, w - 2, 0.6, d - 2, hex(0xa49e90));                                              // courtyard
+  for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {                                      // corner watchtowers
+    const px = (x * w) / 2, pz = (z * d) / 2;
+    lit.box(px, 2.6 + 5.5, pz, 7, 11, 7, plaster); hipRoof(lit, px, pz, 7, 7, 2.6 + 11, 3.4, 2.2, TILE);
+    lit.box(px, 2.6 + 6.5, pz + z * 3.6, 2, 1.6, 0.2, hex(0x2a2f3d), 1);
+  }
+  // gatehouse on +z: tall double-roofed gate, huge red doors, neon signboard with vertical glow bars
+  lit.box(0, 2.6 + 4, d / 2, 14, 8, 5, plaster); hipRoof(lit, 0, d / 2, 14, 5, 2.6 + 8, 3.2, 2.4, TILE); hipRoof(lit, 0, d / 2, 10, 4, 2.6 + 11, 2.6, 1.8, TILE_L);
+  lit.box(0, 2.6 + 3, d / 2 + 2.6, 6, 6, 0.4, hex(0xb02a2a)); lit.box(0, 2.6 + 6.3, d / 2 + 2.62, 6.8, 0.6, 0.5, hex(0x1d1a22));
+  lights.box(0, 2.6 + 6.2, d / 2 + 3.0, 10, 2.4, 0.06, NEON[0], 1);
+  for (const sx of [-1, 1]) { lit.box(sx * 6, 2.6 + 3, d / 2 + 3, 0.8, 7, 0.8, hex(0x2a2f3d)); lights.box(sx * 6, 2.6 + 8, d / 2 + 3, 0.5, 2.4, 0.5, NEON[2]); lights.box(sx * 9, 2.6 + 2.6, d / 2 + 3.2, 0.9, 1.4, 0.9, hex(0xff9a4a)); }
+  // central keep: 3 stacked storeys each with a hip roof, gold ornaments, neon crest
+  let y = 2.6, bw = Math.min(w, d) * 0.34;
+  for (let i = 0; i < 3; i++) {
+    const h = 6 - i * 0.6;
+    lit.box(0, y + h / 2, 0, bw, h, bw, i % 2 ? hex(0xf6efdd) : plaster);
+    for (const sx of [-1, 1]) for (let k = 0; k < 2; k++) { lit.box(sx * (bw / 2 + 0.06), y + h * 0.55, -bw * 0.22 + k * bw * 0.44, 0.14, 2, 1.8, hex(0x3a2418), 63); lights.box(sx * (bw / 2 + 0.14), y + h * 0.55, -bw * 0.22 + k * bw * 0.44, 0.03, 1.6, 1.4, hex(0xffcf8a), sx > 0 ? 4 : 8); }
+    hipRoof(lit, 0, 0, bw, bw, y + h, 3.4, 2.6, i === 0 ? TILE : TILE_L);
+    y += h + 3; bw *= 0.78;
+  }
+  lit.cyl(0, 0, 0.25, 0.25, y, y + 3.4, 6, hex(0xd9a441)); lights.box(0, y + 1.6, 0, 1.4, 1.4, 1.4, NEON[0]);
+  for (const sx of [-1, 1]) lit.box(sx * w * 0.28, 2.6 + 3, -d * 0.1, 10, 6, 14, plaster), hipRoof(lit, sx * w * 0.28, -d * 0.1, 10, 14, 2.6 + 6, 3, 2.2, TILE);   // side halls
+  void r;
+};
+
+/** Car dealership: glass showroom under a cantilevered roof, sign pylon, and a forecourt of parked cars. */
+const dealerBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, h = 8;
+  lit.box(0, 0.2, 0, w + 4, 0.4, d + 14, hex(0x55585f));                                           // forecourt slab
+  lit.box(0, h / 2 + 0.4, -d * 0.2, w, h, d * 0.6, hex(0xdfe3ea));
+  for (let i = 0; i < Math.floor(w / 5); i++) {                                                     // showroom glazing with frames
+    const x = -w / 2 + 2.5 + i * 5;
+    lit.box(x, 4, d * 0.1 + 0.15, 4.2, 5.4, 0.2, hex(0x2a2f3d), 1 | 4 | 8 | 16 | 32); lit.box(x, 4, d * 0.1 + 0.26, 3.7, 4.9, 0.02, GLASS_B, 1);
+    lights.box(x, 4, d * 0.1 + 0.28, 3.3, 4.4, 0.02, WARM_LIT[1], 1);
+  }
+  lit.box(0, h + 1, d * 0.1, w + 2, 0.8, d * 0.6 + 8, hex(0xe9ecf2));                              // cantilever roof
+  lights.box(0, h + 0.65, d * 0.1 + d * 0.3 + 4.1, w + 2, 0.25, 0.1, NEON[1]);
+  lit.box(w / 2 + 3, 6, d / 2 + 5, 1.4, 12, 1.4, hex(0x2a2f3d)); lit.box(w / 2 + 3, 13, d / 2 + 5, 5.5, 4, 0.7, hex(0x2a2f3d)); lights.box(w / 2 + 3, 13, d / 2 + 5.4, 4.8, 3.2, 0.06, NEON[(s.seed + 1) % NEON.length], 1);
+  const models: CarModel[] = ['sport', 'sedan', 'hatch', 'sport', 'van', 'sedan'], cols: V3[] = [hex(0xe63946), hex(0x2a7de1), hex(0xf4f1de), hex(0xffc928), hex(0x2ec4b6), hex(0x8f3dd1)];
+  for (let i = 0; i < 6; i++) bakeCar(lit, lights, models[i], -w * 0.38 + (i % 3) * (w * 0.38), d * 0.5 + 3 + Math.floor(i / 3) * 6.5, (i % 2 ? 0.25 : -0.2), cols[(i + (s.seed & 3)) % 6]);
+  bakeCar(lit, lights, 'sport', 0, d * 0.1 - 2, 0.4, hex(0xff3d6e));                              // hero car inside the glass
+  void r;
+};
+
+/** Machiya: a row of narrow wooden shop-houses with lattice fronts, noren curtains, lanterns and one long tiled roof. */
+const machiyaBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d, fl } = s, units = Math.max(2, Math.round(w / 6.5)), uw = w / units, h = fl * 3.4 + 1;
+  lit.box(0, 0.3, 0, w + 1, 0.6, d + 1, STONE_D);
+  lit.box(0, 0.6 + h / 2, 0, w, h, d, hex([0xd9c7a6, 0xcdb48a, 0xe2d4b8][s.pal % 3]));
+  for (let i = 0; i < units; i++) {
+    const x = -w / 2 + (i + 0.5) * uw;
+    lit.box(x, 0.6 + 1.6, d / 2 + 0.2, uw - 0.5, 3.2, 0.34, hex(0x5a3b28), 1 | 4 | 8 | 16);       // lattice shopfront
+    for (let k = 0; k < 7; k++) lit.box(x - uw * 0.4 + k * (uw * 0.8 / 6), 0.6 + 1.6, d / 2 + 0.42, 0.08, 3.0, 0.1, hex(0x2f1e12));
+    lit.quad([x - 1.4, 0.6 + 3, d / 2 + 0.5], [x + 1.4, 0.6 + 3, d / 2 + 0.5], [x + 1.4, 0.6 + 1.2, d / 2 + 0.5], [x - 1.4, 0.6 + 1.2, d / 2 + 0.5], [hex(0x2c3f8f), hex(0xc8283c), hex(0x1f6a4a)][(i + s.seed) % 3], [x, 2, d / 2 - 1]);
+    for (let f = 1; f < fl; f++) {
+      lit.box(x, 0.6 + f * 3.4 + 1.7, d / 2 + 0.2, uw - 1.1, 2, 0.34, hex(0x4a3020), 1 | 4 | 8 | 16 | 32);
+      for (let k = -2; k <= 2; k++) lit.box(x + k * 0.55, 0.6 + f * 3.4 + 1.7, d / 2 + 0.4, 0.07, 1.9, 0.1, hex(0x2f1e12));
+      lights.box(x, 0.6 + f * 3.4 + 1.7, d / 2 + 0.38, uw - 1.5, 1.6, 0.02, hex(0xffcf8a), 1);
+    }
+    lights.box(x + uw * 0.38, 0.6 + 3.6, d / 2 + 0.9, 0.5, 0.8, 0.5, hex(0xff5a3a));              // paper lantern
+    if (r() < 0.5) { lit.box(x - uw * 0.4, 0.6 + 4.2, d / 2 + 0.7, 0.14, 3.4, 0.14, hex(0x2a1a10)); lights.box(x - uw * 0.4, 0.6 + 4.2, d / 2 + 0.8, 0.5, 3, 0.06, NEON[Math.floor(r() * 3)], 1); }
+  }
+  hipRoof(lit, 0, 0, w, d, 0.6 + h, 3.6, 1.9, TILE);
+};
+
+/** Broadcast / observation tower: stepped lattice legs with ring beams, observation pods and a striped mast. */
+const broadcastBuilder: Custom = (s, lit, lights, r) => {
+  const H = s.fl * 3.6, red = hex(0xe8392f), white = hex(0xf4f4f6), steel = hex(0x8a909c);
+  void r;
+  lit.box(0, 1, 0, 30, 2, 30, hex(0x6a6e78));
+  const segs = 10, sh = H * 0.62 / segs;
+  for (let i = 0; i < segs; i++) {
+    const y = 2 + i * sh, off = 12 * (1 - i / segs) + 1.5, col = i % 2 ? white : red;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) lit.box(sx * off, y + sh / 2, sz * off, 1.1, sh + 0.2, 1.1, col);
+    for (const [nx, nz, ux, uz] of [[0, 1, 1, 0], [0, -1, 1, 0], [1, 0, 0, 1], [-1, 0, 0, 1]]) lit.obox(nx * off, y + sh, nz * off, ux, uz, nx, nz, off * 2, 0.5, 0.5, steel);
+  }
+  const top = 2 + H * 0.62;
+  lit.cyl(0, 0, 6.5, 6.5, top - 5, top, 14, white); lit.cyl(0, 0, 9, 9, top, top + 4.5, 16, hex(0x6fa3b8)); lights.box(0, top + 2.3, 0, 18.4, 1.6, 18.4, WARM_LIT[1]);
+  lit.cyl(0, 0, 8, 6, top + 4.5, top + 7, 16, red);
+  const mast = H - top - 7;
+  for (let i = 0; i < 6; i++) lit.cyl(0, 0, 2.2 - i * 0.25, 2 - i * 0.25, top + 7 + (i * mast) / 6, top + 7 + ((i + 1) * mast) / 6, 8, i % 2 ? white : red);
+  lights.box(0, H + 0.8, 0, 1, 1.4, 1, hex(0xff3030));
+  lit.cyl(0, 0, 12, 12, 2 + H * 0.36, 2 + H * 0.36 + 2.2, 16, white); lights.box(0, 2 + H * 0.36 + 1, 0, 24.2, 0.5, 24.2, NEON[1]);
+};
+
+const CUSTOM: Partial<Record<Tpl, Custom>> = { office: officeBuilder, bank: bankBuilder, club: clubBuilder, market: marketBuilder, fortress: fortressBuilder, dealer: dealerBuilder, machiya: machiyaBuilder, broadcast: broadcastBuilder };
+
 const cache = new Map<string, BuildingGeo>();
 const specKey = (s: BuildingSpec) => `${s.tpl}|${s.w}|${s.d}|${s.fl}|${s.pal}|${s.roof}|${s.seed}|${s.shop ? 1 : 0}`;
 
@@ -237,6 +451,13 @@ export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.B
   const pal = PALETTES[spec.pal % PALETTES.length], wall = hex(pal.wall), r = mulberry32(spec.seed);
   const prisms = footprints(spec);
   const lit = new MB(!detail), lights = new MB();
+  const cust = detail ? CUSTOM[spec.tpl] : undefined;
+  if (cust) {
+    cust(spec, lit, lights, r);
+    const out2 = { lit: lit.toGeometry(), lights: lights.empty ? null : lights.toGeometry(), far: null as unknown as THREE.BufferGeometry };
+    cache.set(key, out2 as BuildingGeo);
+    return { lit: out2.lit, lights: out2.lights };
+  }
   const residential = spec.fl <= 14 && spec.pal !== 3;
   let topPrism = prisms[0], topY = 0;
   prisms.forEach((p) => {
@@ -438,17 +659,28 @@ export function benchGeo(): Pair {
   return done(m, new MB());
 }
 
-/** Cherry-blossom sacred tree: thick trunk, layered crown. */
+/** Cherry-blossom sacred tree: thick gnarled trunk, billowing rounded crown (smooth spheres so the toon bands read as soft clouds of blossom). */
 export function greatTreeGeo(): Pair {
   const m = new MB();
-  m.cyl(0, 0, 1.6, 2.6, 0, 9, 8, hex(0x5a3b28)); m.cyl(0, 0, 1.0, 1.4, 9, 15, 7, hex(0x5a3b28));
-  const pink = [hex(0xffb2cf), hex(0xffc4da), hex(0xf79bbd), hex(0xffd6e6)];
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * 6.2832, r = 5 + (i % 3) * 3, y = 13 + (i % 4) * 2.4;
-    m.cyl(Math.cos(a) * r, Math.sin(a) * r, 4.2 - (i % 3) * 0.6, 1.2, y, y + 4.4, 8, pink[i & 3]);
+  m.cyl(0, 0, 1.7, 2.8, 0, 9, 10, hex(0x5a3b28)); m.cyl(0, 0, 1.0, 1.5, 9, 15, 8, hex(0x5a3b28));
+  for (const [a, h] of [[0.2, 12], [2.3, 13.5], [4.1, 12.5]]) { // thick boughs
+    m.cyl(Math.cos(a) * 2.6, Math.sin(a) * 2.6, 0.5, 0.9, h - 1, h + 3.5, 6, hex(0x5a3b28));
   }
-  m.cyl(0, 0, 8, 2, 17, 22, 10, pink[1]);
-  return done(m, new MB());
+  const geos: THREE.BufferGeometry[] = [m.toGeometry()];
+  const pink = [0xffb2cf, 0xffc4da, 0xf79bbd, 0xffd6e6];
+  const blob = (x: number, y: number, z: number, r: number, c: number) => {
+    const g = new THREE.SphereGeometry(r, 12, 9); g.scale(1, 0.78, 1); g.translate(x, y, z);
+    const col = new Float32Array(g.attributes.position.count * 3), cc = new THREE.Color(c);
+    for (let i = 0; i < col.length; i += 3) { col[i] = cc.r; col[i + 1] = cc.g; col[i + 2] = cc.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.deleteAttribute('uv'); geos.push(g.index ? g.toNonIndexed() : g);
+  };
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.2832, r = 6.5 + (i % 3) * 2.2; blob(Math.cos(a) * r, 15 + (i % 4) * 2.2, Math.sin(a) * r, 5.2 - (i % 3) * 0.5, pink[i & 3]); }
+  for (let i = 0; i < 5; i++) { const a = (i / 5) * 6.2832 + 0.5; blob(Math.cos(a) * 3, 21 + (i % 2) * 2, Math.sin(a) * 3, 6.2, pink[(i + 1) & 3]); }
+  blob(0, 25, 0, 6.5, pink[3]);
+  // merge manually (the MB geometry is indexed, the blobs are not)
+  const ns = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  const merged = mergeGeometries(ns, false)!;
+  return { lit: merged, lights: null };
 }
 
 /** Curved torii variant with proper kasagi (curved lintel) and nuki beam: a large one, scaled by instances. */
@@ -470,3 +702,72 @@ export function archGeo(): Pair {
 }
 
 export function disposeCache(): void { cache.clear(); }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Airport: terminal, control tower, hangar, airliner
+// ---------------------------------------------------------------------------------------------------------------------
+/** Long glass terminal with a layered sloping roof, jet bridges and a big lit sign. Long axis = x, apron side = +z. */
+export function terminalGeo(): Pair {
+  const m = new MB(), l = new MB(), L = 230, W = 46, concrete = hex(0xd9dde4), glass = hex(0x3f7fa6);
+  m.box(0, -2, 0, L + 6, 4, W + 6, hex(0x9aa0aa));
+  m.box(0, 8, -W * 0.15, L, 16, W * 0.7, concrete);
+  m.frustum(0, -W * 0.15, L + 6, W * 0.7 + 8, L * 0.9, W * 0.5, 16, 21, hex(0xeef1f6));
+  m.frustum(0, -W * 0.15, L * 0.9, W * 0.5, L * 0.78, W * 0.2, 21, 25, hex(0xdfe5ee));
+  const bays = Math.floor(L / 6);
+  for (let i = 0; i < bays; i++) {                                           // glazed apron facade with mullions and lit panes
+    const x = -L / 2 + 3 + i * 6;
+    m.box(x, 7, W * 0.2 + 0.12, 5.5, 13, 0.2, glass, 1); if ((i * 7) % 5) l.box(x, 7, W * 0.2 + 0.2, 5, 12, 0.02, [WARM_LIT[1], WARM_LIT[2]][i & 1], 1);
+    m.box(x + 3, 7, W * 0.2 + 0.2, 0.4, 14, 0.4, hex(0xaab3c2));
+  }
+  m.box(0, 17.5, W * 0.2 + 3, L * 0.8, 0.8, 8, hex(0xeef1f6));                // entrance canopy
+  l.box(0, 22.6, W * 0.2 + 2, 70, 3.6, 0.1, hex(0x65d8ff), 1); m.box(0, 22.6, W * 0.2 + 1.7, 72, 4.2, 0.6, hex(0x2a2f3d));
+  for (const x of [-80, -30, 30, 80]) {                                       // jet bridges to the apron
+    m.box(x, 6, W * 0.2 + 12, 4, 4, 22, hex(0xcbd2dc)); m.cyl(x, W * 0.2 + 23, 2.8, 2.8, 4, 8, 10, hex(0xe9edf3)); l.box(x, 6.3, W * 0.2 + 12, 3.4, 1.5, 22.1, WARM_LIT[1]);
+  }
+  return done(m, l);
+}
+
+export function airTowerGeo(): Pair {
+  const m = new MB(), l = new MB();
+  m.box(0, -3, 0, 16, 6, 16, hex(0x8a8f9a)); m.cyl(0, 0, 4.6, 3.6, 0, 52, 14, hex(0xe9edf3));
+  for (let k = 0; k < 5; k++) m.cyl(0, 0, 4.3 - k * 0.2 + 0.25, 4.3 - k * 0.2 + 0.25, 8 + k * 9, 9 + k * 9, 14, hex(0xc8283c));
+  m.frustum(0, 0, 11, 11, 15.5, 15.5, 52, 56.5, hex(0x7d838f));
+  m.box(0, 59, 0, 15, 5, 15, hex(0x3f7fa6)); l.box(0, 59, 0, 15.3, 3.8, 15.3, [WARM_LIT[1], WARM_LIT[1], WARM_LIT[1], WARM_LIT[1]][0]);
+  m.frustum(0, 0, 16.5, 16.5, 4, 4, 61.5, 64.5, hex(0xeef1f6)); m.cyl(0, 0, 0.3, 0.3, 64.5, 76, 6, hex(0x555a66)); l.box(0, 76.5, 0, 1, 1, 1, hex(0xff3030));
+  return done(m, l);
+}
+
+export function hangarGeo(): Pair {
+  const m = new MB(), l = new MB(), L = 70, W = 52;
+  m.box(0, -2, 0, L + 4, 4, W + 4, hex(0x8a8f9a)); m.box(0, 6, 0, L, 12, W, hex(0xcdd3dc));
+  m.frustum(0, 0, L + 1, W + 2, L, W * 0.5, 12, 20, hex(0xe3e7ee)); m.frustum(0, 0, L, W * 0.5, L - 2, W * 0.15, 20, 23, hex(0xd2d8e1));
+  m.box(0, 5.5, W / 2 + 0.2, L * 0.7, 11, 0.5, hex(0x7a8396), 1 | 4 | 8 | 16);
+  for (let i = 1; i < 6; i++) m.box(-L * 0.35 + i * (L * 0.7 / 6), 5.5, W / 2 + 0.5, 0.3, 11, 0.2, hex(0x555d6e), 1);
+  l.box(0, 13.2, W / 2 + 0.3, L * 0.5, 0.8, 0.05, hex(0x65d8ff), 1);
+  return done(m, l);
+}
+
+/** Airliner: lofted fuselage with a window band, swept wings, tail fin, stabilisers, engines, nav lights. Nose = +z. */
+export function planeGeo(livery = 0): Pair {
+  const m = new MB(), l = new MB(), white = hex(0xf4f6fa), stripe = [hex(0xc8283c), hex(0x2a5fd4), hex(0x1f9a6a)][livery % 3], grey = hex(0xb7bdc9), dark = hex(0x24344a);
+  const st = [{ z: -23, r: 0.9 }, { z: -19, r: 2.2 }, { z: -12, r: 3.5 }, { z: 0, r: 3.9 }, { z: 12, r: 3.9 }, { z: 19, r: 3.2 }, { z: 22.5, r: 1.8 }, { z: 24, r: 0.1 }];
+  const n = 14, y0 = 6.5;
+  for (let i = 0; i < st.length - 1; i++) {
+    const a = st[i], b = st[i + 1];
+    for (let k = 0; k < n; k++) {
+      const t0 = (k / n) * 6.2832, t1 = ((k + 1) / n) * 6.2832, up = Math.cos((t0 + t1) / 2), side = Math.abs(Math.sin((t0 + t1) / 2));
+      const col = up < -0.35 ? grey : side > 0.8 && Math.abs(up) < 0.25 ? dark : side > 0.5 && up < 0.1 && up > -0.2 ? stripe : white;
+      const p = (z: number, r: number, t: number): V3 => [Math.sin(t) * r, y0 + Math.cos(t) * r, z];
+      m.quad(p(a.z, a.r, t0), p(a.z, a.r, t1), p(b.z, b.r, t1), p(b.z, b.r, t0), col, [0, y0, (a.z + b.z) / 2]);
+    }
+  }
+  for (const sx of [-1, 1]) {
+    m.prism([[sx * 3, -2], [sx * 17, -9], [sx * 17, -12], [sx * 3, -9]], y0 - 1.2, y0 - 0.5, grey, shade(grey, 1.1));        // wing
+    m.prism([[sx * 2, -20], [sx * 8, -23], [sx * 8, -24.5], [sx * 2, -22.5]], y0 + 0.4, y0 + 0.8, grey, grey);               // tailplane
+    m.cyl(sx * 8.5, -6, 1.15, 1.0, y0 - 2.4, y0 - 1.2, 10, hex(0xe9edf3)); m.cyl(sx * 8.5, -6, 0.9, 0.9, y0 - 3.5, y0 - 2.4, 10, hex(0x2a2f3d));   // engines (vertical stand-in)
+    l.box(sx * 17, y0 - 0.9, -11, 0.5, 0.4, 0.5, sx > 0 ? hex(0x30ff60) : hex(0xff3030));
+  }
+  m.box(0, y0 + 4.2, -20, 0.55, 8, 5.5, stripe); m.box(0, y0 + 8.4, -21.6, 0.45, 1.2, 2.2, stripe); l.box(0, y0 + 9.2, -22.3, 0.4, 0.4, 0.4, hex(0xffffff));
+  m.box(0, 1.5, -2, 0.5, 3, 0.5, dark); m.box(0, 1.5, 12, 0.5, 3, 0.5, dark);
+  return done(m, l);
+}

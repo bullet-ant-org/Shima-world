@@ -2,9 +2,10 @@
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
 import { InstancePools, type PoolEntry } from '../rendering/instancing';
+import type { OutlineSpec } from '../rendering/outline';
 import {
   benchGeo, buildingGeo, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
-  archGeo, type Pair,
+  archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
 import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear } from './layout';
 import {
@@ -22,9 +23,9 @@ class Batch {
     this.n++;
   }
   /** Streams this batch into the shared world pool instead of creating a mesh (and a draw call) per chunk. */
-  commit(pools: InstancePools, geo: THREE.BufferGeometry, mat: THREE.Material, cast: boolean, out: PoolEntry[]): void {
+  commit(pools: InstancePools, geo: THREE.BufferGeometry, mat: THREE.Material, cast: boolean, out: PoolEntry[], ol: OutlineSpec | null = null): void {
     if (!this.n) return;
-    const pool = pools.get(geo, mat, cast), handles: number[] = [];
+    const pool = pools.get(geo, mat, cast, ol), handles: number[] = [];
     const hasC = this.c.length > 0;
     for (let i = 0; i < this.n; i++) {
       const k = i * 7;
@@ -136,9 +137,17 @@ export class World {
       temple: { f: () => templeGeo(1), cast: true }, shrine: { f: shrineGeo, cast: true }, pagoda: { f: () => pagodaGeo(5), cast: true },
       pagodaIce: { f: () => pagodaGeo(5, hex(0xdfeaf5), hex(0x6fa8c8)), cast: true }, sanmon: { f: sanmonGeo, cast: true },
       toro: { f: () => toroGeo(false), cast: false }, toroBig: { f: () => toroGeo(true), cast: true }, komainu: { f: komainuGeo, cast: true },
+      terminal: { f: terminalGeo, cast: true }, airTower: { f: airTowerGeo, cast: true }, hangar: { f: hangarGeo, cast: true },
+      plane0: { f: () => planeGeo(0), cast: true }, plane1: { f: () => planeGeo(1), cast: true }, plane2: { f: () => planeGeo(2), cast: true },
       greatTree: { f: greatTreeGeo, cast: true }, torii: { f: toriiGeo, cast: true }, toriiIce: { f: toriiGeo, cast: true }, arch: { f: archGeo, cast: true },
     };
     for (const [kind, defs] of Object.entries(PROPS)) {
+      if (kind === 'pylon') {
+        const b = new Batch();
+        for (const d of defs) { const g = Math.max(heightAt(d.x, d.z), -8) - 1; b.add(d.x, g, d.z, 0, 1.6, (d.v ?? 20) + 1, 1.6); }
+        b.commit(this.pools, A.column, A.props, false, this.resident, { geo: A.column, width: 0.12 });
+        continue;
+      }
       if (kind === 'bridge') {
         const b = new Batch();
         for (const d of defs) b.add(d.x, Math.max(heightAt(d.x - 38, d.z), heightAt(d.x + 38, d.z)) + 0.4, d.z, 0, 1, 1, 1);
@@ -152,7 +161,8 @@ export class World {
         bl.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
         if (pair.lights) bg.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
       }
-      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident);
+      const w = kind === 'lamp' || kind === 'bench' || kind.startsWith('tl') ? 0.05 : kind === 'toro' ? 0.06 : kind === 'greatTree' ? 0.3 : 0.14;
+      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, { geo: pair.lit, width: w });
       if (pair.lights) bg.commit(this.pools, pair.lights, A.lights, false, this.resident);
     }
   }
@@ -476,7 +486,7 @@ export class World {
 
   private buildChunk(cx: number, cz: number, ring: number, inst: PoolEntry[]): THREE.Group {
     const A = this.assets;
-    const put = (b: Batch, geo: THREE.BufferGeometry, mat: THREE.Material, c = false) => b.commit(this.pools, geo, mat, c, inst);
+    const put = (b: Batch, geo: THREE.BufferGeometry, mat: THREE.Material, c = false, ol = 0) => b.commit(this.pools, geo, mat, c, inst, ol ? { geo, width: ol } : null);
     const grp = new THREE.Group();
     const ox = cx * CHUNK, oz = cz * CHUNK;
     const rnd = mulberry32(Math.imul(cx, 92821) ^ Math.imul(cz, 689287) ^ 0x51ed);
@@ -498,6 +508,13 @@ export class World {
       const m = new THREE.Mesh(g, A.ground); m.userData.ownGeo = true; m.receiveShadow = ring === 0; m.matrixAutoUpdate = false;
       grp.add(m);
     }
+    if (pm?.lights?.idx.length) { // glowing deck edges of sky roads
+      const g = new THREE.BufferGeometry(), L = pm.lights;
+      g.setAttribute('position', new THREE.Float32BufferAttribute(L.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(L.nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(L.col, 3));
+      g.setIndex(L.idx);
+      const m = new THREE.Mesh(g, A.lights); m.userData.ownGeo = true; m.matrixAutoUpdate = false; m.frustumCulled = true;
+      grp.add(m);
+    }
 
     // city buildings: protruding-window detail inside the near ring, textured far LOD beyond
     for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
@@ -505,7 +522,7 @@ export class World {
         const one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
         if (ring === 0 && this.nearDetail) {
           const g = buildingGeo(b.spec, true);
-          put(one, g.lit, A.props, true);
+          { const hull = buildingGeo(b.spec, false).lit; one.commit(this.pools, g.lit, A.props, true, inst, { geo: hull, width: 0.32 }); }
           if (g.lights) { const l = new Batch(); l.add(b.x, 3, b.z, b.ry, 1, 1, 1); put(l, g.lights, A.lights); }
         } else put(one, buildingGeo(b.spec, false).lit, A.building);
       }
@@ -533,7 +550,7 @@ export class World {
         if (noise2(x * 0.012 + 9, z * 0.012) < 0.4 && rr > 0.12) continue;
         trees.add(x, y - 0.2, z, ry, s, s, s);
       }
-      put(cedars, A.cedar, A.props, cast);
+      put(cedars, A.cedar, A.props, cast, 0.14);
     }
 
     // ---- God Island: weathered ruins, bare pale trees and glowing spirit stones; kept sparse so the temples read as the focus ----
@@ -592,7 +609,7 @@ export class World {
         if (y < 2.8 || !at(x, z, 'snow') || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r || !clear(x, z, 6)) continue;
         ice.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s, TMP.setRGB(0.85, 0.93, 1));
       }
-      put(pines, A.pine, A.props, cast); put(ice, A.rock, A.agents, true); put(cr, A.crystalGeo, A.crystal);
+      put(pines, A.pine, A.props, cast, 0.12); put(ice, A.rock, A.agents, true); put(cr, A.crystalGeo, A.crystal);
     }
 
     // ---- islets: a few trees each, flavoured per island ----
@@ -609,7 +626,7 @@ export class World {
       put(pine, A.pine, A.props, cast); put(cedar, A.cedar, A.props, cast);
     }
 
-    put(trees, A.tree, A.props, cast);
+    put(trees, A.tree, A.props, cast, 0.16);
     put(glows, A.orb, A.glow);
     return grp;
   }

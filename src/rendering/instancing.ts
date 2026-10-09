@@ -5,9 +5,11 @@
  * Result: draw calls for all props = number of distinct (geometry, material) pairs (~25), independent of view distance.
  */
 import * as THREE from 'three/webgpu';
+import { hullGeo, outlineMat, type OutlineSpec } from './outline';
 
 export class InstancePool {
   mesh!: THREE.InstancedMesh;
+  outline: THREE.InstancedMesh | null = null;
   count = 0;
   private cap = 0;
   private slotHandle = new Int32Array(0);
@@ -15,12 +17,12 @@ export class InstancePool {
   private free: number[] = [];
   private nextHandle = 0;
 
-  constructor(private geo: THREE.BufferGeometry, private mat: THREE.Material, private cast: boolean, private parent: THREE.Object3D, cap = 1024) {
+  constructor(private geo: THREE.BufferGeometry, private mat: THREE.Material, private cast: boolean, private parent: THREE.Object3D, cap = 1024, private ol: OutlineSpec | null = null) {
     this.alloc(cap);
   }
 
   private alloc(cap: number): void {
-    const old = this.mesh;
+    const old = this.mesh, oldO = this.outline;
     const m = new THREE.InstancedMesh(this.geo, this.mat, cap);
     m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
     m.frustumCulled = false; // one mesh spans the loaded world; the chunk ring already bounds what exists
@@ -34,11 +36,20 @@ export class InstancePool {
       (m.instanceColor.array as Float32Array).set(old.instanceColor!.array as Float32Array);
       sh.set(this.slotHandle); hs.set(this.handleSlot);
       this.parent.remove(old); old.dispose();
+      if (oldO) { this.parent.remove(oldO); oldO.dispose(); }
     }
     this.slotHandle = sh; this.handleSlot = hs; this.cap = cap;
     this.parent.add(m);
     this.mesh = m;
+    if (this.ol) { // outline mesh shares the instance buffers: one extra draw call, zero extra uploads
+      const o = new THREE.InstancedMesh(hullGeo(this.ol.geo), outlineMat(this.ol.width), cap);
+      o.instanceMatrix = m.instanceMatrix;
+      o.count = this.count; o.visible = m.visible; o.frustumCulled = false; o.matrixAutoUpdate = false;
+      this.parent.add(o);
+      this.outline = o;
+    }
   }
+  private syncOutline(): void { if (this.outline) { this.outline.count = this.count; this.outline.visible = this.mesh.visible; } }
 
   /** Adds one Y-rotated, scaled instance; returns a handle for remove(). */
   add(x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number, r = 1, g = 1, b = 1): number {
@@ -55,6 +66,7 @@ export class InstancePool {
     this.slotHandle[slot] = handle; this.handleSlot[handle] = slot;
     this.mesh.count = this.count;
     this.mesh.visible = true;
+    this.syncOutline();
     return handle;
   }
 
@@ -72,6 +84,7 @@ export class InstancePool {
     }
     this.mesh.count = this.count;
     this.mesh.visible = this.count > 0; // an empty pool costs nothing
+    this.syncOutline();
     this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor!.needsUpdate = true;
   }
 
@@ -83,10 +96,10 @@ export interface PoolEntry { pool: InstancePool; handles: number[] }
 export class InstancePools {
   private map = new Map<string, InstancePool>();
   constructor(private parent: THREE.Object3D) {}
-  get(geo: THREE.BufferGeometry, mat: THREE.Material, cast: boolean): InstancePool {
-    const k = geo.uuid + '|' + mat.uuid + '|' + (cast ? 1 : 0);
+  get(geo: THREE.BufferGeometry, mat: THREE.Material, cast: boolean, ol: OutlineSpec | null = null): InstancePool {
+    const k = geo.uuid + '|' + mat.uuid + '|' + (cast ? 1 : 0) + (ol ? '|o' + ol.geo.uuid + ol.width : '');
     let p = this.map.get(k);
-    if (!p) { p = new InstancePool(geo, mat, cast, this.parent); this.map.set(k, p); }
+    if (!p) { p = new InstancePool(geo, mat, cast, this.parent, 1024, ol); this.map.set(k, p); }
     return p;
   }
   get pools(): number { let n = 0; for (const p of this.map.values()) if (p.count) n++; return n; }

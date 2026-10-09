@@ -48,6 +48,7 @@ export const ISLANDS: Island[] = [
   { key: 'god', id: 'god', name: 'GOD ISLAND', title: 'God Island', cx: -300, cz: -2500, rx: 1050, rz: 1050, p: 2, ramp: [0.7, 1], spawn: { x: -300, z: -1870 } },
   { key: 'ember', id: 'ember', name: 'EMBER ISLE', title: 'Ember Isle (volcano)', cx: 1500, cz: 1900, rx: 800, rz: 720, p: 2, ramp: [0.62, 1], spawn: { x: 1500, z: 2420 } },
   { key: 'snow', id: 'snow', name: 'YUKIGAMI PEAKS', title: 'Yukigami Peaks (snow)', cx: -1900, cz: 1900, rx: 850, rz: 780, p: 2, ramp: [0.62, 1], spawn: { x: -1860, z: 2330 } },
+  { key: 'airport', id: 'city', name: 'HANEDA AIRPORT', title: 'Haneda Airport', cx: 1700, cz: 1000, rx: 700, rz: 230, p: 5, ramp: [0.88, 1], spawn: { x: 1570, z: 930 } },
   { key: 'moon', id: 'islet', name: 'TSUKI ROCK', title: 'Tsuki Rock (islet)', cx: -1300, cz: -1450, rx: 260, rz: 240, p: 2, ramp: [0.55, 1], spawn: { x: -1300, z: -1320 } },
   { key: 'fox', id: 'islet', name: 'KITSUNE ISLE', title: 'Kitsune Isle (islet)', cx: 750, cz: 1150, rx: 280, rz: 250, p: 2, ramp: [0.55, 1], spawn: { x: 750, z: 1260 } },
   { key: 'reef', id: 'islet', name: 'CRYSTAL REEF', title: 'Crystal Reef (islet)', cx: -2050, cz: 1020, rx: 240, rz: 230, p: 2, ramp: [0.55, 1], spawn: { x: -2050, z: 1110 } },
@@ -55,6 +56,7 @@ export const ISLANDS: Island[] = [
   { key: 'cairn', id: 'islet', name: 'CAIRN ISLE', title: 'Cairn Isle (islet)', cx: 1850, cz: -150, rx: 320, rz: 280, p: 2, ramp: [0.55, 1], spawn: { x: 1850, z: -30 } },
 ];
 export const MAJOR = ISLANDS.slice(0, 5);
+export const AIRPORT = ISLANDS.find((i) => i.key === 'airport')!;
 const BY_KEY = Object.fromEntries(ISLANDS.map((i) => [i.key, i])) as Record<string, Island>;
 export const island = (k: string) => BY_KEY[k];
 export const GOD = { x: BY_KEY.god.cx, z: BY_KEY.god.cz };
@@ -106,6 +108,7 @@ function islandParts(isl: Island, x: number, z: number): typeof PART {
       PART.m = mount; return PART;
     }
     case 'city': PART.b = 3; return PART;
+    case 'airport': PART.b = 5.5; return PART;
     case 'god': {
       const dg = Math.hypot(x - GOD.x, z - GOD.z) / 1050;
       // sacred terraces: the land climbs from the shore to the altar plateau in broad, stone-edged steps

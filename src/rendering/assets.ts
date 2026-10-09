@@ -44,21 +44,31 @@ function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTex
   return { map: mk(a, true), emissive: mk(b, true) };
 }
 
+/** 3-band cel ramp: shade / mid / light. Nearest filtering gives hard anime bands instead of smooth gradients. */
+function toonRamp(): THREE.DataTexture {
+  const t = new THREE.DataTexture(new Uint8Array([105, 178, 255]), 3, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return t;
+}
+
 export class Assets {
+  readonly ramp = toonRamp();
   // materials
-  readonly terrain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
-  readonly props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
+  readonly terrain = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
+  readonly props = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
   readonly glow = new THREE.MeshBasicMaterial({ color: 0xffffff });
   /** far-LOD facade: shared window atlas tinted per building by vertex colour */
-  readonly building: THREE.MeshStandardMaterial;
+  readonly building: THREE.MeshToonMaterial;
   /** all paved ground (gravel roads, sidewalks, flagstone paths) */
-  readonly ground = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  readonly ground = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   /** unlit vertex-colour emissives: lit windows, neon, lantern flames, beacons */
   readonly lights = new THREE.MeshBasicMaterial({ vertexColors: true });
   readonly road = new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.7 });
   readonly sea = new THREE.MeshStandardMaterial({ color: 0x0b3a5a, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.88 });
-  readonly agents = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
-  readonly pillar = new THREE.MeshStandardMaterial({ color: 0x77808c, roughness: 0.95, flatShading: true });
+  readonly agents = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: this.ramp });
+  /** people: toon vertex colours where white = tintable clothing */
+  readonly folk = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
+  readonly pillar = new THREE.MeshToonMaterial({ color: 0x8a94a4, gradientMap: this.ramp });
   readonly pillarGlow = new THREE.MeshBasicMaterial({ color: 0x40e8ff });
   readonly crystal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.2, flatShading: true, emissive: new THREE.Color(0x2ad0ff), emissiveIntensity: 0.3 });
   readonly lava = new THREE.MeshBasicMaterial({ color: 0xff5a1a });
@@ -86,9 +96,8 @@ export class Assets {
   private tex = windowTextures();
 
   constructor() {
-    this.building = new THREE.MeshStandardMaterial({
-      map: this.tex.map, emissiveMap: this.tex.emissive, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.05, vertexColors: true,
-      roughness: 0.7, metalness: 0.05,
+    this.building = new THREE.MeshToonMaterial({
+      map: this.tex.map, emissiveMap: this.tex.emissive, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.05, vertexColors: true, gradientMap: this.ramp,
     });
 
     this.tree = mergeGeometries([
@@ -132,8 +141,19 @@ export class Assets {
       ...[-36, -18, 0, 18, 36].flatMap((x) => [box(0.4, 1.3, 0.4, x, 0.65, 2.6, 0xd8322f), box(0.4, 1.3, 0.4, x, 0.65, -2.6, 0xd8322f)]),
     ])!;
 
-    const p = new THREE.CapsuleGeometry(0.28, 0.9, 3, 6); p.translate(0, 0.73, 0);
-    this.person = p;
+    // pedestrian: small anime figure. Clothing is white in the vertex colours so the per-instance colour tints jacket + trousers accents.
+    {
+      const part = (g: THREE.BufferGeometry, hexc: number) => { g.deleteAttribute('uv'); return paint(g, hexc); };
+      const ell = (rx: number, ry: number, rz: number, x: number, y: number, z: number, hexc: number) => { const g = new THREE.SphereGeometry(1, 9, 7); g.scale(rx, ry, rz); g.translate(x, y, z); return part(g, hexc); };
+      const tub = (rt: number, rb: number, h: number, x: number, y: number, z: number, hexc: number) => { const g = new THREE.CylinderGeometry(rt, rb, h, 8); g.translate(x, y, z); return part(g, hexc); };
+      this.person = mergeGeometries([
+        tub(0.075, 0.06, 0.78, -0.09, 0.47, 0, 0x2b3045), tub(0.075, 0.06, 0.78, 0.09, 0.47, 0, 0x2b3045), ell(0.07, 0.04, 0.12, -0.09, 0.05, 0.03, 0x15161c), ell(0.07, 0.04, 0.12, 0.09, 0.05, 0.03, 0x15161c),
+        ell(0.2, 0.3, 0.12, 0, 1.2, 0, 0xffffff), ell(0.17, 0.12, 0.11, 0, 0.92, 0, 0x2b3045),
+        tub(0.05, 0.04, 0.55, -0.27, 1.16, 0, 0xffffff), tub(0.05, 0.04, 0.55, 0.27, 1.16, 0, 0xffffff), ell(0.045, 0.05, 0.045, -0.27, 0.85, 0, 0xffd6bd), ell(0.045, 0.05, 0.045, 0.27, 0.85, 0, 0xffd6bd),
+        tub(0.045, 0.05, 0.1, 0, 1.52, 0, 0xffd6bd), ell(0.125, 0.14, 0.13, 0, 1.68, 0, 0xffd6bd), ell(0.135, 0.12, 0.14, 0, 1.74, -0.015, 0x2a2438), ell(0.14, 0.05, 0.1, 0, 1.78, 0.05, 0x2a2438),
+        ell(0.022, 0.03, 0.01, -0.05, 1.67, 0.122, 0x1a2a4a), ell(0.022, 0.03, 0.01, 0.05, 1.67, 0.122, 0x1a2a4a),
+      ])!;
+    }
     this.car = mergeGeometries([
       new THREE.BoxGeometry(4.2, 1.0, 1.9).translate(0, 0.7, 0),
       new THREE.BoxGeometry(2.2, 0.8, 1.6).translate(-0.2, 1.5, 0),

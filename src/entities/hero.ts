@@ -14,7 +14,8 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Assets } from '../rendering/assets';
-import { box, cyl, paint } from '../rendering/assets';
+import { paint } from '../rendering/assets';
+import { hullGeo, outlineMat } from '../rendering/outline';
 
 export type Mode = 'ground' | 'fly' | 'brace' | 'land';
 export interface PoseIn { dt: number; mode: Mode; hs: number; speed: number; vy: number; grounded: boolean; boost: boolean; bank: number }
@@ -58,117 +59,135 @@ export class Hero {
   constructor(assets: Assets) {
     const lit = assets.props, glow = assets.pillarGlow;
     const mesh = (geos: THREE.BufferGeometry[], mat: THREE.Material, parent: THREE.Object3D) => {
-      const m = new THREE.Mesh(mergeGeometries(geos)!, mat); m.castShadow = mat === lit; parent.add(m); return m;
+      const g = mergeGeometries(geos)!;
+      const m = new THREE.Mesh(g, mat); m.castShadow = mat === lit; parent.add(m);
+      if (mat === lit) { const o = new THREE.Mesh(hullGeo(g), outlineMat(0.017)); parent.add(o); } // ink outline
+      return m;
     };
     const pivot = (parent: THREE.Object3D, x: number, y: number, z: number, joint = -1): THREE.Group => {
       const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); if (joint >= 0) this.J[joint] = g; return g;
     };
+    // smooth organic primitives (their normals are smooth, so toon shading reads as soft curved forms, not facets)
+    const E = (rx: number, ry: number, rz: number, x: number, y: number, z: number, hexc: number, seg = 12, rotX = 0, rotZ = 0): THREE.BufferGeometry => {
+      const g = new THREE.SphereGeometry(1, seg, Math.max(6, seg - 4)); g.scale(rx, ry, rz); g.rotateX(rotX); g.rotateZ(rotZ); g.translate(x, y, z); return paint(g, hexc);
+    };
+    const T = (rTop: number, rBot: number, h: number, x: number, y: number, z: number, hexc: number, seg = 12, rotX = 0, rotZ = 0): THREE.BufferGeometry => {
+      const g = new THREE.CylinderGeometry(rTop, rBot, h, seg, 1, false); g.rotateX(rotX); g.rotateZ(rotZ); g.translate(x, y, z); return paint(g, hexc);
+    };
+    const skin = 0xffd6bd, skinS = 0xeab89a, hairC = 0x1b1730, hairH = 0x3b4ba8, eyeC = 0x3fc8f0;
+    const jacket = 0x1c2350, jacketL = 0x2f3b84, pants = 0x2a3050, boot = 0x16171f, glove = 0x1a1c28;
 
     this.root.add(this.rig);
-    this.rig.scale.setScalar(0.88);
+    this.rig.scale.setScalar(0.9);
 
-    // ---------- hip / pelvis ----------
+    // ---------- hip / pelvis: rounded hips, red obi sash with bow, short coat tails ----------
     const hip = pivot(this.rig, 0, 1, 0, H);
     mesh([
-      box(0.48, 0.1, 0.3, 0, 0.02, 0, C.red), box(0.5, 0.025, 0.31, 0, 0.075, 0, C.gold), rbox(0.1, 0.12, 0.06, 0.13, 0.0, 0.17, C.darkRed),
-      rbox(0.06, 0.3, 0.03, 0.15, -0.17, 0.18, C.red, 0, 0, 0.12), rbox(0.06, 0.26, 0.03, 0.2, -0.15, 0.17, C.darkRed, 0, 0, 0.25),
-      box(0.08, 0.2, 0.3, 0.27, -0.08, 0, C.plate), box(0.08, 0.2, 0.3, -0.27, -0.08, 0, C.plate),
-      box(0.3, 0.26, 0.04, 0, -0.14, 0.17, C.pants), box(0.3, 0.3, 0.04, 0, -0.16, -0.17, C.pantsD),
+      E(0.175, 0.13, 0.13, 0, -0.01, 0, pants, 14),
+      T(0.178, 0.186, 0.075, 0, 0.075, 0, C.red, 16), T(0.181, 0.181, 0.014, 0, 0.115, 0, C.gold, 16), T(0.181, 0.181, 0.014, 0, 0.035, 0, C.gold, 16),
+      E(0.062, 0.05, 0.03, 0.065, 0.085, -0.19, C.red, 10), E(0.062, 0.05, 0.03, -0.065, 0.085, -0.19, C.red, 10), E(0.03, 0.035, 0.03, 0, 0.085, -0.19, C.darkRed, 8),
+      E(0.026, 0.17, 0.014, 0.05, -0.1, -0.2, C.red, 8, 0.12), E(0.026, 0.15, 0.014, -0.05, -0.09, -0.2, C.darkRed, 8, 0.12),
+      E(0.17, 0.2, 0.03, 0, -0.17, -0.135, jacket, 12, -0.1), E(0.05, 0.16, 0.11, 0.17, -0.11, -0.01, jacket, 10, 0, -0.18), E(0.05, 0.16, 0.11, -0.17, -0.11, -0.01, jacket, 10, 0, 0.18),
+      E(0.05, 0.05, 0.035, 0.14, 0.0, 0.1, C.plate, 8),
     ], lit, hip);
-    mesh([box(0.07, 0.07, 0.02, 0, 0.02, 0.157, C.cyan)], glow, hip);
+    mesh([E(0.036, 0.036, 0.012, 0, 0.078, 0.188, C.cyan, 10)], glow, hip);
+
     // katana: sheathed at the left hip, tucked through the sash; scabbard angled back-and-down, hilt forward at hand height
-    const KX = -0.35, tilt = -0.62;
+    const KX = -0.31, tilt = -0.62;
     const kg = (len: number, w: number, y: number, z: number, hexc: number, h = w) => {
-      const g = new THREE.BoxGeometry(w, h, len); g.rotateX(tilt); g.translate(KX, y, z); return paint(g, hexc);
+      const g = new THREE.CylinderGeometry(w / 2, w / 2, len, 8); g.rotateX(Math.PI / 2 + tilt); g.scale(1, h / w, 1); g.translate(KX, y, z); return paint(g, hexc);
     };
     mesh([
-      kg(0.95, 0.06, -0.12, -0.2, 0x14121c, 0.075),                // scabbard (saya)
-      kg(0.035, 0.1, 0.17, 0.215, C.gold, 0.1),                    // hand guard (tsuba)
-      kg(0.26, 0.05, 0.28, 0.37, 0x1d2142, 0.06),                  // wrapped grip (tsuka)
-      kg(0.05, 0.065, -0.405, -0.585, C.red, 0.08),                // scabbard end cap (kojiri)
-      kg(0.18, 0.07, -0.05, -0.12, C.red, 0.09),                   // sash cord binding it to the belt
+      kg(0.95, 0.05, -0.12, -0.2, 0x14121c), kg(0.03, 0.095, 0.17, 0.215, C.gold), kg(0.26, 0.042, 0.28, 0.37, 0x1d2142),
+      kg(0.05, 0.055, -0.405, -0.585, C.red), kg(0.18, 0.06, -0.05, -0.12, C.red),
     ], lit, hip);
-    mesh([kg(0.7, 0.014, -0.1, -0.2, C.cyan, 0.014)], glow, hip);
+    mesh([kg(0.7, 0.012, -0.1, -0.2, C.cyan)], glow, hip);
 
-    // ---------- spine / chest ----------
+    // ---------- spine / torso: waist curve into a chest with shoulders, collar, harness and a rounded jet-pack ----------
     const spine = pivot(hip, 0, 0.1, 0, SP);
     mesh([
-      box(0.36, 0.2, 0.22, 0, 0.06, 0, C.jacket), box(0.48, 0.34, 0.27, 0, 0.34, 0, C.jacket),
-      box(0.4, 0.24, 0.06, 0, 0.36, 0.15, C.plate), box(0.4, 0.03, 0.07, 0, 0.24, 0.15, C.red), box(0.4, 0.025, 0.07, 0, 0.49, 0.15, C.plateL),
-      box(0.56, 0.08, 0.28, 0, 0.54, 0, C.plate), box(0.3, 0.1, 0.22, 0, 0.62, 0, C.jacketL),
-      rbox(0.06, 0.14, 0.2, 0.13, 0.65, 0.0, C.jacketL, 0, 0, -0.25), rbox(0.06, 0.14, 0.2, -0.13, 0.65, 0.0, C.jacketL, 0, 0, 0.25),
-      // jet-pack with nozzles, katana sheath + hilt + guard on the back
-      box(0.3, 0.3, 0.12, 0, 0.34, -0.2, C.plate), box(0.24, 0.04, 0.13, 0, 0.5, -0.2, C.plateL),
-      rcyl(0.05, 0.065, 0.1, 6, 0.08, 0.2, -0.27, C.plateL, PI / 2), rcyl(0.05, 0.065, 0.1, 6, -0.08, 0.2, -0.27, C.plateL, PI / 2),
+      E(0.135, 0.17, 0.095, 0, 0.08, 0, jacket, 14), E(0.185, 0.2, 0.125, 0, 0.35, 0.005, jacket, 16),
+      E(0.08, 0.13, 0.03, 0, 0.39, 0.112, 0xf2f4fb, 10),                                                    // white undershirt V
+      E(0.075, 0.2, 0.02, 0.115, 0.37, 0.108, jacketL, 10, 0, 0.12), E(0.075, 0.2, 0.02, -0.115, 0.37, 0.108, jacketL, 10, 0, -0.12), // lapels
+      E(0.205, 0.06, 0.12, 0, 0.5, 0, jacket, 14),                                                           // trapezius / shoulder line
+      T(0.07, 0.085, 0.07, 0, 0.56, 0, jacketL, 12), E(0.05, 0.075, 0.03, 0.06, 0.58, -0.04, jacketL, 8, 0, 0.3), E(0.05, 0.075, 0.03, -0.06, 0.58, -0.04, jacketL, 8, 0, -0.3),
+      T(0.185, 0.17, 0.016, 0, 0.255, 0.003, C.red, 16),                                                     // chest strap
+      E(0.012, 0.22, 0.012, 0.09, 0.36, 0.126, C.gold, 6, 0, 0.5), E(0.012, 0.22, 0.012, -0.09, 0.36, 0.126, C.gold, 6, 0, -0.5),
+      E(0.115, 0.14, 0.065, 0, 0.36, -0.16, C.plate, 12), E(0.095, 0.03, 0.07, 0, 0.5, -0.16, C.plateL, 10),
+      T(0.034, 0.046, 0.075, 0.055, 0.23, -0.21, C.plateL, 8, Math.PI / 2), T(0.034, 0.046, 0.075, -0.055, 0.23, -0.21, C.plateL, 8, Math.PI / 2),
     ], lit, spine);
     mesh([
-      rcyl(0.05, 0.05, 0.025, 6, 0, 0.38, 0.185, C.cyan, PI / 2), box(0.02, 0.2, 0.01, 0.12, 0.36, 0.185, C.cyan), box(0.02, 0.2, 0.01, -0.12, 0.36, 0.185, C.cyan),
-      box(0.4, 0.015, 0.01, 0, 0.27, 0.185, C.cyan),
-      rcyl(0.045, 0.045, 0.02, 6, 0.08, 0.2, -0.325, C.cyan, PI / 2), rcyl(0.045, 0.045, 0.02, 6, -0.08, 0.2, -0.325, C.cyan, PI / 2),
+      E(0.032, 0.032, 0.01, 0, 0.355, 0.128, C.cyan, 10), E(0.008, 0.07, 0.006, 0.075, 0.35, 0.128, C.cyan, 6), E(0.008, 0.07, 0.006, -0.075, 0.35, 0.128, C.cyan, 6),
+      E(0.03, 0.03, 0.012, 0.055, 0.23, -0.255, C.cyan, 8), E(0.03, 0.03, 0.012, -0.055, 0.23, -0.255, C.cyan, 8),
     ], glow, spine);
 
-    // ---------- head ----------
+    // ---------- head: rounded cranium + pointed chin, big anime eyes, layered hair ----------
     const head = pivot(spine, 0, 0.62, 0, HD);
+    head.scale.setScalar(1.12);
     mesh([
-      rcyl(0.05, 0.06, 0.1, 6, 0, 0.05, 0, C.skinS),
-      ball(0.13, 0.92, 1.08, 1, 0, 0.22, 0, C.skin), box(0.15, 0.07, 0.15, 0, 0.12, 0.02, C.skin), box(0.025, 0.04, 0.03, 0, 0.2, 0.135, C.skinS),
-      box(0.05, 0.03, 0.015, 0.05, 0.235, 0.125, C.white), box(0.05, 0.03, 0.015, -0.05, 0.235, 0.125, C.white),
-      box(0.06, 0.012, 0.015, 0.05, 0.27, 0.127, C.hair), box(0.06, 0.012, 0.015, -0.05, 0.27, 0.127, C.hair), box(0.04, 0.006, 0.01, 0, 0.14, 0.13, 0x8f4a45),
-      box(0.02, 0.05, 0.04, 0.13, 0.22, 0, C.skin), box(0.02, 0.05, 0.04, -0.13, 0.22, 0, C.skin),
-      // hair: cap, fringe, side locks and swept-back spikes
-      ball(0.15, 1.02, 0.85, 1.05, 0, 0.28, -0.02, C.hair),
-      rbox(0.05, 0.1, 0.03, 0.08, 0.3, 0.12, C.hair, 0, 0, 0.3), rbox(0.05, 0.12, 0.03, 0.03, 0.3, 0.13, C.hairH, 0, 0, 0.1), rbox(0.05, 0.11, 0.03, -0.02, 0.3, 0.13, C.hair, 0, 0, -0.15),
-      rbox(0.05, 0.1, 0.03, -0.07, 0.3, 0.12, C.hairH, 0, 0, -0.3), rbox(0.03, 0.15, 0.05, 0.14, 0.2, 0.05, C.hair), rbox(0.03, 0.15, 0.05, -0.14, 0.2, 0.05, C.hair),
-      spike(0.06, 0.26, 0.07, 0.34, -0.06, C.hair, -1.1, -0.4), spike(0.06, 0.28, -0.07, 0.34, -0.06, C.hairH, -1.1, 0.4), spike(0.06, 0.3, 0, 0.36, -0.08, C.hair, -1.25, 0),
-      spike(0.05, 0.22, 0.12, 0.3, -0.02, C.hairH, -0.8, -0.9), spike(0.05, 0.22, -0.12, 0.3, -0.02, C.hair, -0.8, 0.9),
-      cyl(0.145, 0.145, 0.035, 10, 0, 0.29, -0.015, C.red), box(0.1, 0.055, 0.02, 0, 0.29, 0.14, C.plate),
+      T(0.045, 0.052, 0.11, 0, 0.04, 0, skinS, 10),
+      E(0.128, 0.142, 0.13, 0, 0.225, -0.005, skin, 18), E(0.088, 0.085, 0.1, 0, 0.125, 0.032, skin, 14), E(0.045, 0.04, 0.04, 0, 0.085, 0.06, skin, 10),
+      E(0.02, 0.032, 0.022, 0.125, 0.2, 0, skin, 8), E(0.02, 0.032, 0.022, -0.125, 0.2, 0, skin, 8),
+      E(0.038, 0.05, 0.014, 0.053, 0.215, 0.117, 0xffffff, 12), E(0.038, 0.05, 0.014, -0.053, 0.215, 0.117, 0xffffff, 12),         // eye whites
+      E(0.03, 0.044, 0.014, 0.053, 0.212, 0.125, eyeC, 12), E(0.03, 0.044, 0.014, -0.053, 0.212, 0.125, eyeC, 12),                   // irises
+      E(0.014, 0.026, 0.014, 0.053, 0.208, 0.133, 0x0a1830, 10), E(0.014, 0.026, 0.014, -0.053, 0.208, 0.133, 0x0a1830, 10),         // pupils
+      E(0.034, 0.008, 0.01, 0.056, 0.27, 0.121, hairC, 8, 0, -0.18), E(0.034, 0.008, 0.01, -0.056, 0.27, 0.121, hairC, 8, 0, 0.18), // brows
+      E(0.012, 0.016, 0.014, 0, 0.165, 0.13, skinS, 8), E(0.02, 0.005, 0.008, 0, 0.12, 0.118, 0xa05555, 8), E(0.034, 0.02, 0.01, 0.075, 0.155, 0.1, 0xffb4a8, 8), E(0.034, 0.02, 0.01, -0.075, 0.155, 0.1, 0xffb4a8, 8),
+      // hair: back cap, forehead fringe (down-pointing tufts), side locks, swept-back spikes, one stray antenna
+      E(0.142, 0.152, 0.15, 0, 0.255, -0.025, hairC, 16),
+      spike(0.045, 0.15, 0.09, 0.33, 0.1, hairC, Math.PI + 0.15, 0.25), spike(0.05, 0.17, 0.045, 0.345, 0.115, hairH, Math.PI + 0.1, 0.1), spike(0.05, 0.16, 0, 0.35, 0.12, hairC, Math.PI + 0.1, 0),
+      spike(0.05, 0.17, -0.045, 0.345, 0.115, hairH, Math.PI + 0.1, -0.1), spike(0.045, 0.15, -0.09, 0.33, 0.1, hairC, Math.PI + 0.15, -0.25),
+      spike(0.04, 0.26, 0.128, 0.31, 0.04, hairC, Math.PI, 0.1), spike(0.04, 0.26, -0.128, 0.31, 0.04, hairH, Math.PI, -0.1),
+      spike(0.06, 0.27, 0.07, 0.34, -0.08, hairC, -1.15, -0.4), spike(0.06, 0.28, -0.07, 0.34, -0.08, hairH, -1.15, 0.4), spike(0.06, 0.3, 0, 0.36, -0.1, hairC, -1.3, 0),
+      spike(0.016, 0.12, 0.02, 0.38, 0.04, hairC, 0.2, 0.6),
+      T(0.134, 0.134, 0.028, 0, 0.3, -0.005, C.red, 18), E(0.04, 0.022, 0.012, 0, 0.3, 0.135, C.plate, 10),
     ], lit, head);
     mesh([
-      box(0.03, 0.03, 0.015, 0, 0.29, 0.152, C.cyan), box(0.022, 0.022, 0.01, 0.05, 0.235, 0.133, C.cyan), box(0.022, 0.022, 0.01, -0.05, 0.235, 0.133, C.cyan),
-      box(0.012, 0.03, 0.03, 0.145, 0.22, 0.0, C.cyan), box(0.012, 0.03, 0.03, -0.145, 0.22, 0.0, C.cyan),
+      E(0.012, 0.014, 0.01, 0.035, 0.228, 0.14, 0xffffff, 8), E(0.012, 0.014, 0.01, -0.071, 0.228, 0.14, 0xffffff, 8), // eye highlights
+      E(0.016, 0.016, 0.01, 0, 0.3, 0.145, C.cyan, 8), E(0.012, 0.022, 0.012, 0.13, 0.2, 0.0, C.cyan, 8), E(0.012, 0.022, 0.012, -0.13, 0.2, 0.0, C.cyan, 8),
     ], glow, head);
-    // ponytail: two chained segments
-    const t1 = pivot(head, 0, 0.32, -0.15, T1);
-    mesh([rcyl(0.045, 0.035, 0.28, 5, 0, -0.14, 0, C.hair), cyl(0.055, 0.055, 0.03, 6, 0, -0.01, 0, C.red)], lit, t1);
-    const t2 = pivot(t1, 0, -0.28, 0, T2);
-    mesh([rcyl(0.036, 0.012, 0.32, 5, 0, -0.16, 0, C.hairH)], lit, t2);
+    // ponytail: two chained tapered segments off a hair bun
+    const t1 = pivot(head, 0, 0.33, -0.15, T1);
+    mesh([E(0.055, 0.055, 0.05, 0, 0, 0.0, hairC, 10), T(0.05, 0.034, 0.3, 0, -0.16, 0, hairC, 10), T(0.06, 0.06, 0.03, 0, -0.01, 0, C.red, 10)], lit, t1);
+    const t2 = pivot(t1, 0, -0.3, 0, T2);
+    mesh([T(0.034, 0.008, 0.34, 0, -0.17, 0, hairH, 10)], lit, t2);
 
     // ---------- scarf: two chained cloth segments ----------
     const s1 = pivot(spine, 0, 0.58, -0.15, S1);
-    mesh([box(0.28, 0.4, 0.03, 0, -0.2, 0, C.red), box(0.31, 0.08, 0.28, 0, 0.06, 0.15, C.red), box(0.04, 0.4, 0.035, 0.1, -0.2, 0, C.gold)], lit, s1);
+    mesh([E(0.135, 0.21, 0.022, 0, -0.2, 0, C.red, 10), E(0.15, 0.06, 0.15, 0, 0.04, 0.14, C.red, 12), E(0.02, 0.2, 0.026, 0.1, -0.2, 0, C.gold, 6)], lit, s1);
     const s2 = pivot(s1, 0, -0.4, 0, S2);
-    mesh([box(0.26, 0.42, 0.03, 0, -0.21, 0, C.darkRed), rbox(0.26, 0.1, 0.03, 0, -0.44, 0, C.darkRed, 0, 0, 0.5)], lit, s2);
+    mesh([E(0.125, 0.22, 0.02, 0, -0.2, 0, C.darkRed, 10), E(0.11, 0.07, 0.02, 0, -0.42, 0, C.darkRed, 8, 0, 0.4)], lit, s2);
 
-    // ---------- arms: shoulder (pauldron + sleeve) -> elbow (bracer + glove) ----------
+    // ---------- arms: round shoulder -> tapered sleeve -> elbow -> bracer -> gloved hand ----------
     for (const side of [-1, 1] as const) {
-      const sh = pivot(spine, 0.34 * side, 0.5, 0, side < 0 ? SHL : SHR);
+      const sh = pivot(spine, 0.235 * side, 0.5, 0, side < 0 ? SHL : SHR);
       mesh([
-        rcyl(0.068, 0.056, 0.3, 6, 0, -0.15, 0, C.jacket), ball(0.07, 1, 1, 1, 0, 0, 0, C.jacketL, 6),
-        box(0.2, 0.04, 0.23, 0, 0.055, 0, C.plate), box(0.19, 0.03, 0.21, 0, 0.02, 0, C.plateL), box(0.2, 0.012, 0.23, 0, 0.078, 0, C.red),
-        box(0.12, 0.04, 0.16, 0.03 * side, -0.03, 0, C.plate),
+        E(0.078, 0.078, 0.078, 0, 0, 0, jacket, 12), T(0.066, 0.052, 0.3, 0, -0.15, 0, jacket, 12),
+        E(0.1, 0.05, 0.105, 0.012 * side, 0.045, 0, C.plate, 12), E(0.098, 0.018, 0.103, 0.012 * side, 0.074, 0, C.red, 12), E(0.095, 0.045, 0.1, 0.02 * side, 0.012, 0, jacketL, 10),
       ], lit, sh);
       const el = pivot(sh, 0, -0.3, 0, side < 0 ? ELL : ELR);
       mesh([
-        rcyl(0.056, 0.046, 0.26, 6, 0, -0.13, 0, C.jacket), rcyl(0.064, 0.058, 0.15, 6, 0, -0.18, 0, C.plate), rcyl(0.066, 0.066, 0.02, 6, 0, -0.11, 0, C.red),
-        box(0.085, 0.09, 0.07, 0, -0.31, 0, 0x1a1c28), box(0.02, 0.05, 0.03, 0.05 * side, -0.29, 0.03, 0x1a1c28), box(0.075, 0.03, 0.065, 0, -0.37, 0.005, C.plate),
+        E(0.053, 0.053, 0.053, 0, 0, 0, jacket, 10), T(0.052, 0.04, 0.26, 0, -0.13, 0, jacket, 12),
+        T(0.057, 0.05, 0.13, 0, -0.18, 0, C.plate, 12), T(0.06, 0.06, 0.018, 0, -0.115, 0, C.red, 12),
+        E(0.04, 0.055, 0.03, 0, -0.315, 0.002, glove, 10), E(0.012, 0.03, 0.012, -0.022, -0.375, 0.012, glove, 6), E(0.012, 0.033, 0.012, -0.007, -0.38, 0.014, glove, 6),
+        E(0.012, 0.033, 0.012, 0.008, -0.38, 0.014, glove, 6), E(0.012, 0.03, 0.012, 0.023, -0.375, 0.012, glove, 6), E(0.013, 0.028, 0.013, 0.045 * side, -0.31, 0.022, glove, 6, 0, 0.6 * side),
       ], lit, el);
-      mesh([box(0.015, 0.11, 0.015, 0, -0.18, 0.062, C.cyan), box(0.07, 0.012, 0.012, 0, -0.26, 0.04, C.cyan)], glow, el);
+      mesh([E(0.007, 0.05, 0.007, 0, -0.18, 0.058, C.cyan, 6), E(0.034, 0.006, 0.006, 0, -0.26, 0.042, C.cyan, 6)], glow, el);
     }
 
-    // ---------- legs: thigh (wide hakama) -> knee (greave) -> ankle (boot) ----------
+    // ---------- legs: loose trousers -> knee -> greave + boot with rounded toe and red sole ----------
     for (const side of [-1, 1] as const) {
-      const th = pivot(hip, 0.12 * side, -0.02, 0, side < 0 ? THL : THR);
-      mesh([rcyl(0.105, 0.078, 0.46, 7, 0, -0.23, 0, C.pants), rcyl(0.11, 0.11, 0.02, 7, 0, -0.07, 0, C.red), box(0.04, 0.3, 0.02, 0, -0.2, 0.09, C.pantsD)], lit, th);
+      const th = pivot(hip, 0.1 * side, -0.02, 0, side < 0 ? THL : THR);
+      mesh([E(0.1, 0.1, 0.1, 0, 0, 0, pants, 12), T(0.1, 0.072, 0.46, 0, -0.23, 0, pants, 14), T(0.104, 0.104, 0.02, 0, -0.07, 0, C.red, 14)], lit, th);
       const kn = pivot(th, 0, -0.46, 0, side < 0 ? KNL : KNR);
       mesh([
-        rcyl(0.07, 0.055, 0.44, 7, 0, -0.22, 0, C.pantsD), box(0.1, 0.09, 0.1, 0, 0.0, 0.05, C.plate),
-        box(0.09, 0.3, 0.03, 0, -0.2, 0.066, C.plate), rcyl(0.072, 0.066, 0.13, 7, 0, -0.37, 0, C.boot), box(0.1, 0.02, 0.035, 0, -0.06, 0.07, C.red),
+        E(0.068, 0.068, 0.068, 0, 0, 0, pants, 12), T(0.068, 0.05, 0.44, 0, -0.22, 0, 0x1f2540, 12),
+        E(0.052, 0.17, 0.03, 0, -0.19, 0.056, C.plate, 10), E(0.06, 0.05, 0.04, 0, -0.01, 0.052, C.plateL, 10), T(0.07, 0.062, 0.17, 0, -0.355, 0, boot, 12), T(0.07, 0.07, 0.02, 0, -0.275, 0, C.red, 12),
       ], lit, kn);
-      mesh([box(0.013, 0.24, 0.013, 0, -0.2, 0.084, C.cyan)], glow, kn);
+      mesh([E(0.006, 0.12, 0.006, 0, -0.19, 0.068, C.cyan, 6)], glow, kn);
       const an = pivot(kn, 0, -0.44, 0, side < 0 ? ANL : ANR);
       mesh([
-        box(0.11, 0.07, 0.3, 0, -0.03, 0.07, C.boot), box(0.1, 0.05, 0.08, 0, -0.035, 0.2, C.plate), box(0.1, 0.045, 0.07, 0, -0.01, -0.06, C.plate),
-        box(0.12, 0.025, 0.32, 0, -0.07, 0.07, C.red),
+        E(0.052, 0.045, 0.125, 0, -0.035, 0.045, boot, 12), E(0.048, 0.036, 0.07, 0, -0.04, 0.145, boot, 10), E(0.05, 0.03, 0.04, 0, -0.03, 0.2, C.plate, 8), E(0.058, 0.014, 0.17, 0, -0.078, 0.06, C.red, 10),
       ], lit, an);
     }
     this.hipY = this.hipYT = 1;

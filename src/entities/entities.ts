@@ -6,6 +6,8 @@ import type { Input } from '../core/input';
 import { heightAt, mulberry32 } from '../world/terrain';
 import { NET, blockTop, blocked, cityPaths, inCity } from '../world/layout';
 import type { Path } from '../world/paths';
+import { CAR_MODELS, carGeo, type CarModel } from '../rendering/cars';
+import { hullGeo, outlineMat } from '../rendering/outline';
 import type { Network } from '../network/network';
 
 const O = new THREE.Object3D();
@@ -170,7 +172,9 @@ export class NpcSystem {
 
   constructor(n: number, assets: Assets) {
     this.n = n;
-    this.mesh = new THREE.InstancedMesh(assets.person, assets.agents, n);
+    this.mesh = new THREE.InstancedMesh(assets.person, assets.folk, n);
+    const ol = new THREE.InstancedMesh(hullGeo(assets.person), outlineMat(0.03), n);
+    ol.instanceMatrix = this.mesh.instanceMatrix; ol.frustumCulled = false; this.mesh.add(ol);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;
@@ -226,9 +230,47 @@ export class NpcSystem {
   }
 }
 
+/** A fleet of instanced cars drawn with per-model meshes (toon body + glowing lights + ink outline); each car is a slot index. */
+export class CarFleet {
+  readonly group = new THREE.Group();
+  private lit: THREE.InstancedMesh[] = []; private n: number; private models: CarModel[]; private per: number;
+  constructor(n: number, models: CarModel[], assets: Assets, palette: number[]) {
+    this.n = n; this.models = models; this.per = Math.ceil(n / models.length);
+    models.forEach((model, mi) => {
+      const g = carGeo(model);
+      const body = new THREE.InstancedMesh(g.lit, assets.props, this.per);
+      body.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.per * 3), 3);
+      for (let k = 0; k < this.per; k++) {
+        const c = model === 'taxi' ? TAXI : new THREE.Color(palette[(k * 7 + mi * 3) % palette.length]);
+        body.setColorAt(k, c);
+      }
+      body.frustumCulled = false; body.castShadow = true;
+      const lights = new THREE.InstancedMesh(g.lights, assets.lights, this.per);
+      lights.instanceMatrix = body.instanceMatrix; lights.frustumCulled = false;
+      const outline = new THREE.InstancedMesh(hullGeo(g.lit), outlineMat(0.045), this.per);
+      outline.instanceMatrix = body.instanceMatrix; outline.frustumCulled = false;
+      this.group.add(body, lights, outline);
+      this.lit.push(body);
+    });
+  }
+  place(i: number, x: number, y: number, z: number, yaw: number): void {
+    O.position.set(x, y, z); O.rotation.set(0, yaw, 0); O.scale.setScalar(1); O.updateMatrix();
+    this.lit[i % this.models.length].setMatrixAt(Math.floor(i / this.models.length), O.matrix);
+  }
+  hide(i: number): void {
+    O.position.set(0, -999, 0); O.scale.setScalar(0.0001); O.updateMatrix();
+    this.lit[i % this.models.length].setMatrixAt(Math.floor(i / this.models.length), O.matrix);
+  }
+  flush(): void { for (const m of this.lit) m.instanceMatrix.needsUpdate = true; }
+  get count(): number { return this.n; }
+}
+const TAXI = new THREE.Color(0xffc928);
+const CAR_PALETTE = [0xe63946, 0x2a7de1, 0xf4f1de, 0x2ec4b6, 0x8f3dd1, 0xf6a52c, 0x2b3350, 0xff7ab6, 0x6bd16b];
+
 /** Cars follow the curved city roads (right-hand lanes). Near: every frame. Mid: half rate. Outside the city nothing is simulated. */
 export class TrafficSystem {
-  readonly mesh: THREE.InstancedMesh;
+  readonly group: THREE.Group;
+  private fleet: CarFleet;
   readonly n: number;
   private path: (Path | null)[]; private s: Float32Array; private idx: Int32Array; private dir: Float32Array; private spd: Float32Array; private cur: Float32Array;
   private active: Uint8Array;
@@ -236,24 +278,22 @@ export class TrafficSystem {
   private frame = 0;
   counts = { near: 0, mid: 0 };
 
-  constructor(n: number, assets: Assets) {
+  constructor(n: number, assets: Assets, private kinds: string[] = ['avenue', 'street'], private lift = 3.2) {
     this.n = n;
-    this.mesh = new THREE.InstancedMesh(assets.car, assets.agents, n);
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
-    this.mesh.frustumCulled = false;
+    this.fleet = new CarFleet(n, kinds.includes('sky') ? ['hover'] : CAR_MODELS, assets, CAR_PALETTE);
+    this.group = this.fleet.group;
     this.path = new Array(n).fill(null); this.s = new Float32Array(n); this.idx = new Int32Array(n);
     this.dir = new Float32Array(n); this.spd = new Float32Array(n); this.cur = new Float32Array(n); this.active = new Uint8Array(n);
-    for (let i = 0; i < n; i++) this.mesh.setColorAt(i, PALETTE[(i * 3) % PALETTE.length]);
   }
 
   private spawn(i: number, cx: number, cz: number): void {
-    for (let t = 0; t < 10; t++) {
-      const a = this.rnd() * Math.PI * 2, d = 40 + this.rnd() * 190;
-      const seg = NET.nearest(cx + Math.cos(a) * d, cz + Math.sin(a) * d, 14);
-      if (!seg || seg.path.kind === 'stone') continue;
+    for (let t = 0; t < 14; t++) {
+      const a = this.rnd() * Math.PI * 2, d = 40 + this.rnd() * 230;
+      const seg = NET.nearest(cx + Math.cos(a) * d, cz + Math.sin(a) * d, this.kinds.includes('sky') ? 60 : 14, this.kinds);
+      if (!seg) continue;
       this.path[i] = seg.path; this.idx[i] = seg.i; this.s[i] = seg.path.len[seg.i];
       this.dir[i] = this.rnd() < 0.5 ? 1 : -1;
-      this.spd[i] = 9 + this.rnd() * 8; this.cur[i] = this.spd[i];
+      this.spd[i] = (this.kinds.includes('sky') ? 28 : 9) + this.rnd() * (this.kinds.includes('sky') ? 20 : 8); this.cur[i] = this.spd[i];
       this.active[i] = 1;
       return;
     }
@@ -261,7 +301,7 @@ export class TrafficSystem {
   }
 
   update(dt: number, cx: number, cz: number, time: number): void {
-    void time; void cityPaths;
+    void time;
     this.frame++;
     const inside = inCity(cx, cz);
     let near = 0, mid = 0;
@@ -269,9 +309,8 @@ export class TrafficSystem {
       if (!inside) this.active[i] = 0;
       else if (!this.active[i]) this.spawn(i, cx, cz);
       const p = this.path[i];
-      if (!this.active[i] || !p) { O.position.set(0, -999, 0); O.scale.setScalar(0.0001); O.updateMatrix(); this.mesh.setMatrixAt(i, O.matrix); continue; }
+      if (!this.active[i] || !p) { this.fleet.hide(i); continue; }
 
-      // advance along the road
       const isNear = (p.x[this.idx[i]] - cx) ** 2 + (p.z[this.idx[i]] - cz) ** 2 < 90 * 90;
       if (isNear) near++; else mid++;
       if (isNear || (this.frame + i) % 2 === 0) {
@@ -288,15 +327,11 @@ export class TrafficSystem {
       const tx = p.tx[k] + (p.tx[k + 1] - p.tx[k]) * t, tz = p.tz[k] + (p.tz[k + 1] - p.tz[k]) * t;
       const lane = this.dir[i] * p.width * 0.26;
       const x = p.x[k] + (p.x[k + 1] - p.x[k]) * t - tz * lane, z = p.z[k] + (p.z[k + 1] - p.z[k]) * t + tx * lane;
-      // despawn when far; it respawns near the player
       if ((x - cx) ** 2 + (z - cz) ** 2 > 260 * 260) { this.active[i] = 0; this.spawn(i, cx, cz); continue; }
-      O.position.set(x, 3.18, z);
-      O.rotation.set(0, Math.atan2(tx * this.dir[i], tz * this.dir[i]), 0);
-      O.scale.setScalar(1);
-      O.updateMatrix();
-      this.mesh.setMatrixAt(i, O.matrix);
+      const y = p.ys ? p.ys[k] + (p.ys[k + 1] - p.ys[k]) * t + 1.9 : this.lift;
+      this.fleet.place(i, x, y, z, Math.atan2(tx * this.dir[i], tz * this.dir[i]));
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.fleet.flush();
     this.counts.near = near; this.counts.mid = mid;
   }
 }
@@ -306,7 +341,7 @@ export class RemotePlayers {
   readonly mesh: THREE.InstancedMesh;
   count = 0;
   constructor(assets: Assets, max = 16) {
-    this.mesh = new THREE.InstancedMesh(assets.person, new THREE.MeshStandardMaterial({ color: 0x25e6ff, emissive: 0x0a4a55 }), max);
+    this.mesh = new THREE.InstancedMesh(assets.person, assets.folk, max);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
   }
