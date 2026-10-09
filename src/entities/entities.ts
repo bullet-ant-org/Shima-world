@@ -61,7 +61,7 @@ export class Player {
 
     if (this.mode === 'ground') {
       if (flyTap) { this.mode = 'fly'; this.grounded = false; this.vy = 6; this.boost = false; this.landing = false; return; }
-      const speed = I.run ? 9 : 5;
+      const speed = I.run ? 7.8 : 3.6;
       const tvx = (-sy * my + cy * mx) * speed, tvz = (-cy * my - sy * mx) * speed;
       const k = 1 - Math.exp(-10 * dt);
       this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;

@@ -141,6 +141,19 @@ function buildCityLots(): void {
 
 export function buildingsNear(x: number, z: number): Building[] { return bIndex.get(bKey(x, z)) ?? []; }
 
+/** Footprint test in building-local space that follows each design's real silhouette (so there are no invisible corners). */
+function inside(b: Building, lx: number, lz: number): boolean {
+  const m = 0.4;
+  switch (b.spec.tpl) {
+    case 'round': return Math.hypot(lx, lz) < Math.min(b.hw, b.hd) + m;
+    case 'wedge': return lz > -b.hd - m && lz < b.hd + m && Math.abs(lx) < b.hw * (1 - (lz + b.hd) / (2 * b.hd)) + m;
+    case 'broadcast': return Math.abs(lx) < 15 && Math.abs(lz) < 15;
+    case 'dealer': return Math.abs(lx) < b.hw + m && lz > -b.hd - m && lz < b.hd * 0.4;
+    case 'L': return Math.abs(lx) < b.hw + m && lz > -b.spec.d * 0.5 - m && lz < b.spec.d * 0.1 + m ? true : Math.abs(lx - b.spec.w * 0.25) < b.spec.w * 0.25 + m && lz > -b.spec.d * 0.1 && lz < b.hd + m;
+    default: return Math.abs(lx) < b.hw + m && Math.abs(lz) < b.hd + m;
+  }
+}
+
 /** Top (world y) of whatever solid stands at this column, else -Infinity. Walkers are blocked, flyers pass over. */
 export function blockTop(x: number, z: number): number {
   if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return 3 + SPIRE.h;
@@ -152,7 +165,7 @@ export function blockTop(x: number, z: number): number {
       if (Math.abs(dx) > 70 || Math.abs(dz) > 70) continue;
       const c = Math.cos(b.ry), s = Math.sin(b.ry);
       const lx = dx * c - dz * s, lz = dx * s + dz * c; // into building-local space (x = width)
-      if (Math.abs(lx) < b.hw + 0.4 && Math.abs(lz) < b.hd + 0.4) return b.top;
+      if (inside(b, lx, lz)) return b.top;
     }
   }
   return -Infinity;

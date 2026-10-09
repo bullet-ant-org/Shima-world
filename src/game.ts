@@ -84,8 +84,7 @@ export class Game {
     this.gr.setScale(this.dyn.scale);
     const q = this.profile.q;
 
-    this.world = new World(this.assets);
-    this.world.nearDetail = q.detailWindows;
+    this.world = new World(this.assets, { outlines: q.outlines, detail: q.detailWindows });
     this.scene.add(this.world.group);
     this.sky = new Sky(this.assets.ramp);
     this.scene.add(this.sky.group);

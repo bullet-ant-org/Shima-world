@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu';
 export class Particles {
   readonly points: THREE.Points;
   private pos: Float32Array; private col: Float32Array; private vel: Float32Array; private life: Float32Array; private max: Float32Array; private base: Float32Array;
-  private head = 0;
+  private head = 0; private alive = 0;
   constructor(private n: number, size: number, private gravity = 0, private drag = 1) {
     this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 3); this.vel = new Float32Array(n * 3);
     this.life = new Float32Array(n); this.max = new Float32Array(n).fill(1); this.base = new Float32Array(n * 3);
@@ -22,9 +22,11 @@ export class Particles {
     const i = this.head; this.head = (i + 1) % this.n;
     this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
     this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy; this.vel[i * 3 + 2] = vz;
-    this.life[i] = life; this.max[i] = life; this.base[i * 3] = r; this.base[i * 3 + 1] = g; this.base[i * 3 + 2] = b;
+    this.alive = Math.max(this.alive, life); this.life[i] = life; this.max[i] = life; this.base[i * 3] = r; this.base[i * 3 + 1] = g; this.base[i * 3 + 2] = b;
   }
   update(dt: number): void {
+    if (this.alive <= 0) return; // nothing alive: skip the whole loop and the buffer uploads
+    this.alive -= dt;
     const d = Math.pow(this.drag, dt * 60);
     for (let i = 0; i < this.n; i++) {
       if (this.life[i] <= 0) { if (this.col[i * 3] !== 0) { this.col[i * 3] = this.col[i * 3 + 1] = this.col[i * 3 + 2] = 0; } continue; }

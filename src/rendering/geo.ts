@@ -443,6 +443,9 @@ const CUSTOM: Partial<Record<Tpl, Custom>> = { office: officeBuilder, bank: bank
 const cache = new Map<string, BuildingGeo>();
 const specKey = (s: BuildingSpec) => `${s.tpl}|${s.w}|${s.d}|${s.fl}|${s.pal}|${s.roof}|${s.seed}|${s.shop ? 1 : 0}`;
 
+/** true when the (expensive) detailed geometry for this spec is already built */
+export function hasBuildingDetail(spec: BuildingSpec): boolean { return cache.has(specKey(spec) + 'N'); }
+
 /** `detail` = near geometry (protruding windows etc); the far geometry is always built. Cached per spec. */
 export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null } {
   const key = specKey(spec) + (detail ? 'N' : 'F');

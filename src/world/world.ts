@@ -4,7 +4,7 @@ import { Assets } from '../rendering/assets';
 import { InstancePools, type PoolEntry } from '../rendering/instancing';
 import type { OutlineSpec } from '../rendering/outline';
 import {
-  benchGeo, buildingGeo, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
+  benchGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
 import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear } from './layout';
@@ -56,7 +56,7 @@ class Batch {
   }
 }
 
-interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; inst: PoolEntry[]; border?: THREE.LineLoop }
+interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; inst: PoolEntry[]; border?: THREE.LineLoop; pending: boolean }
 
 const NEON = [0xff3d9a, 0x25e6ff, 0xffb02e, 0x9a6bff].map((h) => new THREE.Color(h));
 const TMP = new THREE.Color();
@@ -72,12 +72,15 @@ export class World {
   private readonly ringSegs = [32, 16, 8];
   debugBorders = false;
   nearDetail = true; // set from the device profile
+  private missed = 0;  // detailed building geometries skipped this chunk build (built in later frames to avoid hitches)
+  outlines = true;
   private borderMats = [0x2cff8a, 0xffd23c, 0xff5a5a].map((c) => new THREE.LineBasicMaterial({ color: c }));
   private sea: THREE.Mesh;
   private pillars: THREE.LOD[] = [];
   stats = { loaded: 0, ring: [0, 0, 0], builtThisFrame: 0, pools: 0, instances: 0 };
 
-  constructor(private assets: Assets) {
+  constructor(private assets: Assets, opts: { outlines: boolean; detail: boolean } = { outlines: true, detail: true }) {
+    this.outlines = opts.outlines; this.nearDetail = opts.detail;
     const seaGeo = new THREE.PlaneGeometry(90000, 90000); seaGeo.rotateX(-Math.PI / 2);
     this.sea = new THREE.Mesh(seaGeo, assets.sea);
     this.sea.frustumCulled = false;
@@ -119,9 +122,9 @@ export class World {
   }
 
   private buildSkyline(): void {
-    // slightly smaller than the real buildings so streamed-in chunks hide these without z-fighting
+    // EVERY building always has a mesh (cheap far version) so nothing is ever invisible-but-solid.
+    // Slightly smaller than the detailed buildings so those hide these without z-fighting
     for (const b of BUILDINGS) {
-      if (b.spec.fl < 20) continue;
       const one = new Batch(); one.add(b.x, 3, b.z, b.ry, 0.965, 0.99, 0.965);
       one.commit(this.pools, buildingGeo(b.spec, false).lit, this.assets.building, false, this.resident);
     }
@@ -145,7 +148,7 @@ export class World {
       if (kind === 'pylon') {
         const b = new Batch();
         for (const d of defs) { const g = Math.max(heightAt(d.x, d.z), -8) - 1; b.add(d.x, g, d.z, 0, 1.6, (d.v ?? 20) + 1, 1.6); }
-        b.commit(this.pools, A.column, A.props, false, this.resident, { geo: A.column, width: 0.12 });
+        b.commit(this.pools, A.column, A.props, false, this.resident);
         continue;
       }
       if (kind === 'bridge') {
@@ -161,8 +164,8 @@ export class World {
         bl.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
         if (pair.lights) bg.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
       }
-      const w = kind === 'lamp' || kind === 'bench' || kind.startsWith('tl') ? 0.05 : kind === 'toro' ? 0.06 : kind === 'greatTree' ? 0.3 : 0.14;
-      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, { geo: pair.lit, width: w });
+      const inked = this.outlines && ['house0', 'house1', 'house2', 'cabin0', 'cabin1', 'cabin2', 'temple', 'shrine', 'pagoda', 'pagodaIce', 'sanmon', 'torii', 'toriiIce', 'toroBig', 'terminal', 'airTower', 'hangar', 'plane0', 'plane1', 'plane2', 'greatTree'].includes(kind);
+      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, inked ? { geo: pair.lit, width: kind === 'greatTree' ? 0.3 : 0.14 } : null);
       if (pair.lights) bg.commit(this.pools, pair.lights, A.lights, false, this.resident);
     }
   }
@@ -311,20 +314,22 @@ export class World {
     this.stats.builtThisFrame = 0;
 
     const ccx = Math.floor(px / CHUNK), ccz = Math.floor(pz / CHUNK);
-    // look-ahead: preload where the player is heading (works the same for a fast vehicle later)
-    const look = 2.5;
-    const pcx = Math.floor((px + vx * look) / CHUNK), pcz = Math.floor((pz + vz * look) / CHUNK);
+    // look-ahead: preload where the player is heading (works the same for a fast flyer)
+    const look = 2.5, ax = px + vx * look, az = pz + vz * look;
+    const dist = (cx: number, cz: number) => Math.min(Math.hypot(cx + 0.5 - px / CHUNK, cz + 0.5 - pz / CHUNK), Math.hypot(cx + 0.5 - ax / CHUNK, cz + 0.5 - az / CHUNK));
 
     const want: { cx: number; cz: number; ring: number; d: number }[] = [];
     const seen = new Set<string>();
+    const pcx = Math.floor(ax / CHUNK), pcz = Math.floor(az / CHUNK);
     for (const [bx, bz] of [[ccx, ccz], [pcx, pcz]]) {
-      for (let dx = -rings; dx <= rings; dx++) for (let dz = -rings; dz <= rings; dz++) {
+      for (let dx = -rings - 1; dx <= rings + 1; dx++) for (let dz = -rings - 1; dz <= rings + 1; dz++) {
         const cx = bx + dx, cz = bz + dz, k = this.key(cx, cz);
         if (seen.has(k) || this.empty.has(k)) continue;
         seen.add(k);
-        const d = Math.min(Math.max(Math.abs(cx - ccx), Math.abs(cz - ccz)), Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz)));
-        if (d > rings) continue;
-        const ring = d <= 1 ? 0 : d <= 2 ? 1 : 2;
+        const d = dist(cx, cz);
+        if (d > rings + 0.4) continue;
+        // round LOD rings measured in real distance: ~1.3 chunks fully detailed, ~2.4 medium, the rest terrain + roads only
+        const ring = d <= 1.3 ? 0 : d <= 2.4 ? 1 : 2;
         const rec = this.chunks.get(k);
         if (!rec || rec.ring !== ring) want.push({ cx, cz, ring, d });
       }
@@ -335,11 +340,12 @@ export class World {
       this.load(w.cx, w.cz, w.ring);
       this.stats.builtThisFrame++;
     }
+    // idle frame: finish detailed buildings that were deferred (one design per frame, no hitch)
+    if (!this.stats.builtThisFrame) for (const rec of this.chunks.values()) if (rec.pending && rec.ring === 0) { this.load(rec.cx, rec.cz, 0); this.stats.builtThisFrame++; break; }
 
     // unload with hysteresis
     for (const [k, rec] of this.chunks) {
-      const d = Math.min(Math.max(Math.abs(rec.cx - ccx), Math.abs(rec.cz - ccz)), Math.max(Math.abs(rec.cx - pcx), Math.abs(rec.cz - pcz)));
-      if (d > rings + 1) { this.dispose(rec); this.chunks.delete(k); }
+      if (dist(rec.cx, rec.cz) > rings + 1.4) { this.dispose(rec); this.chunks.delete(k); }
     }
     this.stats.loaded = this.chunks.size;
     this.stats.pools = this.pools.pools; this.stats.instances = this.pools.instances;
@@ -356,7 +362,9 @@ export class World {
     for (let i = 0; i <= 2; i++) for (let j = 0; j <= 2; j++) maxH = Math.max(maxH, heightAt(ox + i * 64, oz + j * 64));
     if (maxH < -3) { this.empty.add(k); return; }
     const inst: PoolEntry[] = [];
-    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring, inst), inst };
+    this.missed = 0;
+    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring, inst), inst, pending: false };
+    rec.pending = this.missed > 0;
     if (this.debugBorders) this.addBorder(rec);
     this.group.add(rec.group);
     this.chunks.set(k, rec);
@@ -516,15 +524,17 @@ export class World {
       grp.add(m);
     }
 
-    // city buildings: protruding-window detail inside the near ring, textured far LOD beyond
-    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-      for (const b of buildingsNear(ox + i * 64 + 1, oz + j * 64 + 1)) {
-        const one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
-        if (ring === 0 && this.nearDetail) {
-          const g = buildingGeo(b.spec, true);
-          { const hull = buildingGeo(b.spec, false).lit; one.commit(this.pools, g.lit, A.props, true, inst, { geo: hull, width: 0.32 }); }
+    // detailed buildings only in the nearest ring (the always-resident far versions cover everything else). Detailed geometry is expensive to
+    // generate, so at most one new design is built per chunk build; chunks with leftovers are upgraded a frame at a time.
+    if (ring === 0 && this.nearDetail) {
+      let built = 0;
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+        for (const b of buildingsNear(ox + i * 64 + 1, oz + j * 64 + 1)) {
+          if (!hasBuildingDetail(b.spec)) { if (built >= 1) { this.missed++; continue; } built++; }
+          const g = buildingGeo(b.spec, true), one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
+          one.commit(this.pools, g.lit, A.props, true, inst, this.outlines ? { geo: buildingGeo(b.spec, false).lit, width: 0.32 } : null);
           if (g.lights) { const l = new Batch(); l.add(b.x, 3, b.z, b.ry, 1, 1, 1); put(l, g.lights, A.lights); }
-        } else put(one, buildingGeo(b.spec, false).lit, A.building);
+        }
       }
     }
     if (ring === 2) return grp; // far ring: terrain, roads and city silhouettes only
@@ -550,7 +560,7 @@ export class World {
         if (noise2(x * 0.012 + 9, z * 0.012) < 0.4 && rr > 0.12) continue;
         trees.add(x, y - 0.2, z, ry, s, s, s);
       }
-      put(cedars, A.cedar, A.props, cast, 0.14);
+      put(cedars, A.cedar, A.props, false);
     }
 
     // ---- God Island: weathered ruins, bare pale trees and glowing spirit stones; kept sparse so the temples read as the focus ----
@@ -609,7 +619,7 @@ export class World {
         if (y < 2.8 || !at(x, z, 'snow') || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r || !clear(x, z, 6)) continue;
         ice.add(x, y + s * 0.2, z, rnd() * 6, s, s * 0.7, s, TMP.setRGB(0.85, 0.93, 1));
       }
-      put(pines, A.pine, A.props, cast, 0.12); put(ice, A.rock, A.agents, true); put(cr, A.crystalGeo, A.crystal);
+      put(pines, A.pine, A.props, false); put(ice, A.rock, A.agents, true); put(cr, A.crystalGeo, A.crystal);
     }
 
     // ---- islets: a few trees each, flavoured per island ----
@@ -626,7 +636,7 @@ export class World {
       put(pine, A.pine, A.props, cast); put(cedar, A.cedar, A.props, cast);
     }
 
-    put(trees, A.tree, A.props, cast, 0.16);
+    put(trees, A.tree, A.props, false);
     put(glows, A.orb, A.glow);
     return grp;
   }

@@ -13,6 +13,7 @@ export interface Quality {
   traffic: number;
   rain: number;         // max rain particles
   fogFar: number;
+  outlines: boolean;    // ink outlines on buildings / props (the hero always has one)
   detailWindows: boolean; // protruding window geometry on nearby buildings (off: textured facades only)
 }
 
@@ -36,14 +37,15 @@ export function qualityFor(gpu: DeviceProfile['gpuTier'], cpu: DeviceProfile['cp
   const c = preset === 'adaptive' ? cpu : g;
   return {
     resScale: g === 'high' ? 1 : g === 'mid' ? 0.85 : 0.7,
-    viewRings: g === 'high' ? 5 : g === 'mid' ? 4 : 3,
+    viewRings: g === 'high' ? 4 : g === 'mid' ? 3 : 2, // far terrain + resident skyline cover the distance, so streamed chunks can stay close
     shadows: g !== 'low',
     shadowMap: g === 'high' ? 2048 : 1024,
-    npc: c === 'high' ? 220 : c === 'mid' ? 120 : 50,
-    traffic: c === 'high' ? 60 : c === 'mid' ? 32 : 14,
+    outlines: g !== 'low',
+    npc: c === 'high' ? 150 : c === 'mid' ? 70 : 36,
+    traffic: c === 'high' ? 40 : c === 'mid' ? 22 : 10,
     rain: g === 'high' ? 2400 : g === 'mid' ? 1400 : 600,
     fogFar: g === 'high' ? 1300 : g === 'mid' ? 1000 : 750,
-    detailWindows: g !== 'low',
+    detailWindows: g === 'high',
   };
 }
 

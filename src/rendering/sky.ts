@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../world/terrain';
 
-const R = 8000, CLOUDS = 90, FIELD = 14000;
+const R = 8000, CLOUDS = 46, FIELD = 14000;
 
 export class Sky {
   readonly group = new THREE.Group();
@@ -32,7 +32,7 @@ export class Sky {
     const blobs: THREE.BufferGeometry[] = [];
     const rr = mulberry32(5);
     const add = (x: number, y: number, z: number, r: number) => {
-      const s = new THREE.SphereGeometry(r, 12, 9); s.scale(1, 0.72, 1); s.translate(x, y, z);
+      const s = new THREE.SphereGeometry(r, 9, 6); s.scale(1, 0.72, 1); s.translate(x, y, z);
       s.deleteAttribute('uv'); blobs.push(s.toNonIndexed());
     };
     add(0, 0.5, 0, 1); add(1.1, 0.35, 0.1, 0.8); add(-1.1, 0.3, -0.1, 0.78); add(0.4, 0.95, 0.1, 0.72); add(-0.5, 0.85, 0, 0.6); add(1.9, 0.2, 0, 0.55); add(-1.8, 0.2, 0.05, 0.5);
@@ -42,7 +42,7 @@ export class Sky {
     const p = cg.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) if (p.getY(i) < 0) p.setY(i, p.getY(i) * 0.25);
     cg.computeVertexNormals();
-    this.cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: ramp, fog: false, transparent: true, opacity: 0.96 });
+    this.cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: ramp, fog: false });
     this.clouds = new THREE.InstancedMesh(cg, this.cloudMat, CLOUDS);
     this.clouds.frustumCulled = false; this.clouds.renderOrder = -5;
     this.cx = new Float32Array(CLOUDS); this.cz = new Float32Array(CLOUDS); this.cy = new Float32Array(CLOUDS); this.cs = new Float32Array(CLOUDS); this.cr = new Float32Array(CLOUDS);
@@ -65,14 +65,24 @@ export class Sky {
   update(dt: number, cam: THREE.Vector3, horizon: THREE.Color, night: number, sunDir: THREE.Vector3, rain: number): void {
     this.group.position.copy(cam);
     this.hor.copy(horizon);
+    if ((this.tick++ & 3) === 0) this.paintDome(night);
+    this.placeSky(dt, cam, night, sunDir, rain);
+  }
+
+  private tick = 0;
+  private paintDome(night: number): void {
     // zenith: deeper and more saturated than the horizon in daytime, near-black at night
-    this.zen.copy(horizon).multiplyScalar(0.62); this.zen.r *= 0.82; this.zen.g *= 0.95; this.zen.b = Math.min(1, this.zen.b * 1.18 + 0.05 * (1 - night));
+    this.zen.copy(this.hor).multiplyScalar(0.62); this.zen.r *= 0.82; this.zen.g *= 0.95; this.zen.b = Math.min(1, this.zen.b * 1.18 + 0.05 * (1 - night));
     const c = this.domeCol, y = this.domeY;
     for (let i = 0; i < y.length; i++) {
       const t = Math.pow(Math.max(0, y[i]), 0.6), j = i * 3;
       c[j] = this.hor.r + (this.zen.r - this.hor.r) * t; c[j + 1] = this.hor.g + (this.zen.g - this.hor.g) * t; c[j + 2] = this.hor.b + (this.zen.b - this.hor.b) * t;
     }
     (this.dome.geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+    void night;
+  }
+
+  private placeSky(dt: number, cam: THREE.Vector3, night: number, sunDir: THREE.Vector3, rain: number): void {
 
     // sun + moon discs on the sky sphere, always facing the camera
     const place = (m: THREE.Mesh, dir: THREE.Vector3, visible: boolean) => {
