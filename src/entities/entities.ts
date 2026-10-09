@@ -3,7 +3,9 @@ import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
 import { Hero, type Mode } from './hero';
 import type { Input } from '../core/input';
-import { blockTop, blocked, heightAt, inCity, mulberry32 } from '../world/terrain';
+import { heightAt, mulberry32 } from '../world/terrain';
+import { NET, blockTop, blocked, cityPaths, inCity } from '../world/layout';
+import type { Path } from '../world/paths';
 import type { Network } from '../network/network';
 
 const O = new THREE.Object3D();
@@ -62,8 +64,14 @@ export class Player {
       const k = 1 - Math.exp(-10 * dt);
       this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
       let nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
-      if (blocked(nx, this.z) || heightAt(nx, this.z) < -0.3) { nx = this.x; this.vx = 0; }
-      if (blocked(this.x, nz) || heightAt(this.x, nz) < -0.3) { nz = this.z; this.vz = 0; }
+      // walkers can't scale cliffs: a step steeper than ~48 degrees (or, mid-air, into terrain above the feet) is a wall
+      const h0 = heightAt(this.x, this.z);
+      const wall = (px: number, pz: number) => {
+        const h1 = heightAt(px, pz), run = Math.hypot(px - this.x, pz - this.z) || 1e-3;
+        return blocked(px, pz) || h1 < -0.3 || (this.grounded ? (h1 - h0) / run > 1.1 : h1 > this.y + 0.6);
+      };
+      if (wall(nx, this.z)) { nx = this.x; this.vx = 0; }
+      if (wall(this.x, nz)) { nz = this.z; this.vz = 0; }
       this.x = nx; this.z = nz;
       if (this.hspeed > 0.5) { this.yaw = Math.atan2(this.vx, this.vz); }
       const ground = Math.max(heightAt(this.x, this.z), 0);
@@ -218,12 +226,12 @@ export class NpcSystem {
   }
 }
 
-/** Cars on the 64 m road grid. Near: signals + queuing. Mid: path following. Outside the city: nothing is simulated. */
+/** Cars follow the curved city roads (right-hand lanes). Near: every frame. Mid: half rate. Outside the city nothing is simulated. */
 export class TrafficSystem {
   readonly mesh: THREE.InstancedMesh;
   readonly n: number;
-  private axis: Uint8Array; private lane: Float32Array; private pos: Float32Array; private dir: Float32Array; private spd: Float32Array; private cur: Float32Array;
-  private active = new Uint8Array(0);
+  private path: (Path | null)[]; private s: Float32Array; private idx: Int32Array; private dir: Float32Array; private spd: Float32Array; private cur: Float32Array;
+  private active: Uint8Array;
   private rnd = mulberry32(99);
   private frame = 0;
   counts = { near: 0, mid: 0 };
@@ -233,56 +241,57 @@ export class TrafficSystem {
     this.mesh = new THREE.InstancedMesh(assets.car, assets.agents, n);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
     this.mesh.frustumCulled = false;
-    this.axis = new Uint8Array(n); this.lane = new Float32Array(n); this.pos = new Float32Array(n);
-    this.dir = new Float32Array(n); this.spd = new Float32Array(n); this.cur = new Float32Array(n);
-    this.active = new Uint8Array(n);
+    this.path = new Array(n).fill(null); this.s = new Float32Array(n); this.idx = new Int32Array(n);
+    this.dir = new Float32Array(n); this.spd = new Float32Array(n); this.cur = new Float32Array(n); this.active = new Uint8Array(n);
     for (let i = 0; i < n; i++) this.mesh.setColorAt(i, PALETTE[(i * 3) % PALETTE.length]);
   }
 
   private spawn(i: number, cx: number, cz: number): void {
-    this.axis[i] = this.rnd() < 0.5 ? 0 : 1;
-    this.dir[i] = this.rnd() < 0.5 ? 1 : -1;
-    const along = this.axis[i] === 0 ? cx : cz, across = this.axis[i] === 0 ? cz : cx;
-    const line = Math.round((across + (this.rnd() - 0.5) * 300) / 64);
-    const lineC = this.axis[i] === 0 ? Math.max(-7, Math.min(7, line)) : Math.max(1, Math.min(15, line));
-    this.lane[i] = lineC * 64 + this.dir[i] * 3.2;
-    this.pos[i] = along + (this.rnd() - 0.5) * 360;
-    this.spd[i] = 9 + this.rnd() * 7; this.cur[i] = this.spd[i];
-    this.active[i] = 1;
+    for (let t = 0; t < 10; t++) {
+      const a = this.rnd() * Math.PI * 2, d = 40 + this.rnd() * 190;
+      const seg = NET.nearest(cx + Math.cos(a) * d, cz + Math.sin(a) * d, 14);
+      if (!seg || seg.path.kind === 'stone') continue;
+      this.path[i] = seg.path; this.idx[i] = seg.i; this.s[i] = seg.path.len[seg.i];
+      this.dir[i] = this.rnd() < 0.5 ? 1 : -1;
+      this.spd[i] = 9 + this.rnd() * 8; this.cur[i] = this.spd[i];
+      this.active[i] = 1;
+      return;
+    }
+    this.active[i] = 0;
   }
 
   update(dt: number, cx: number, cz: number, time: number): void {
+    void time; void cityPaths;
     this.frame++;
     const inside = inCity(cx, cz);
     let near = 0, mid = 0;
-    const phase = Math.floor(time / 8) & 1; // signal: axis 0 green on phase 0
     for (let i = 0; i < this.n; i++) {
-      if (!inside) { this.active[i] = 0; }
+      if (!inside) this.active[i] = 0;
       else if (!this.active[i]) this.spawn(i, cx, cz);
-      if (!this.active[i]) { O.position.set(0, -999, 0); O.scale.setScalar(0.0001); O.updateMatrix(); this.mesh.setMatrixAt(i, O.matrix); continue; }
+      const p = this.path[i];
+      if (!this.active[i] || !p) { O.position.set(0, -999, 0); O.scale.setScalar(0.0001); O.updateMatrix(); this.mesh.setMatrixAt(i, O.matrix); continue; }
 
-      const x = this.axis[i] === 0 ? this.pos[i] : this.lane[i];
-      const z = this.axis[i] === 0 ? this.lane[i] : this.pos[i];
-      const d2 = (x - cx) * (x - cx) + (z - cz) * (z - cz);
-      if (d2 > 260 * 260) { this.active[i] = 0; this.spawn(i, cx, cz); continue; }
-      const isNear = d2 < 90 * 90;
+      // advance along the road
+      const isNear = (p.x[this.idx[i]] - cx) ** 2 + (p.z[this.idx[i]] - cz) ** 2 < 90 * 90;
       if (isNear) near++; else mid++;
       if (isNear || (this.frame + i) % 2 === 0) {
         const step = isNear ? dt : dt * 2;
-        let target = this.spd[i];
-        if (isNear) { // approach the next intersection ahead: stop on red
-          const p = this.pos[i], next = this.dir[i] > 0 ? Math.ceil((p + 8) / 64) * 64 : Math.floor((p - 8) / 64) * 64;
-          const dist = Math.abs(next - p);
-          const green = (this.axis[i] === 0) === (phase === 0);
-          if (!green && dist < 16) target = dist < 9 ? 0 : 3;
-        }
-        this.cur[i] += (target - this.cur[i]) * Math.min(1, step * 2.5);
-        this.pos[i] += this.dir[i] * this.cur[i] * step;
-        const lo = this.axis[i] === 0 ? 64 : -448, hi = this.axis[i] === 0 ? 960 : 448;
-        if (this.pos[i] < lo || this.pos[i] > hi) this.dir[i] = -this.dir[i];
+        this.s[i] += this.dir[i] * this.cur[i] * step;
+        if (p.closed) this.s[i] = ((this.s[i] % p.total) + p.total) % p.total;
+        else if (this.s[i] <= 0 || this.s[i] >= p.total) { this.dir[i] = -this.dir[i]; this.s[i] = Math.max(0, Math.min(p.total, this.s[i])); }
       }
-      O.position.set(x, 3.15, z);
-      O.rotation.set(0, this.axis[i] === 0 ? (this.dir[i] > 0 ? 0 : Math.PI) : (this.dir[i] > 0 ? Math.PI / 2 : -Math.PI / 2), 0);
+      let k = this.idx[i];
+      while (k < p.n - 2 && p.len[k + 1] < this.s[i]) k++;
+      while (k > 0 && p.len[k] > this.s[i]) k--;
+      this.idx[i] = k;
+      const l0 = p.len[k], l1 = p.len[k + 1], t = l1 > l0 ? (this.s[i] - l0) / (l1 - l0) : 0;
+      const tx = p.tx[k] + (p.tx[k + 1] - p.tx[k]) * t, tz = p.tz[k] + (p.tz[k + 1] - p.tz[k]) * t;
+      const lane = this.dir[i] * p.width * 0.26;
+      const x = p.x[k] + (p.x[k + 1] - p.x[k]) * t - tz * lane, z = p.z[k] + (p.z[k + 1] - p.z[k]) * t + tx * lane;
+      // despawn when far; it respawns near the player
+      if ((x - cx) ** 2 + (z - cz) ** 2 > 260 * 260) { this.active[i] = 0; this.spawn(i, cx, cz); continue; }
+      O.position.set(x, 3.18, z);
+      O.rotation.set(0, Math.atan2(tx * this.dir[i], tz * this.dir[i]), 0);
       O.scale.setScalar(1);
       O.updateMatrix();
       this.mesh.setMatrixAt(i, O.matrix);

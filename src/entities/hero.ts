@@ -76,6 +76,19 @@ export class Hero {
       box(0.3, 0.26, 0.04, 0, -0.14, 0.17, C.pants), box(0.3, 0.3, 0.04, 0, -0.16, -0.17, C.pantsD),
     ], lit, hip);
     mesh([box(0.07, 0.07, 0.02, 0, 0.02, 0.157, C.cyan)], glow, hip);
+    // katana: sheathed at the left hip, tucked through the sash; scabbard angled back-and-down, hilt forward at hand height
+    const KX = -0.35, tilt = -0.62;
+    const kg = (len: number, w: number, y: number, z: number, hexc: number, h = w) => {
+      const g = new THREE.BoxGeometry(w, h, len); g.rotateX(tilt); g.translate(KX, y, z); return paint(g, hexc);
+    };
+    mesh([
+      kg(0.95, 0.06, -0.12, -0.2, 0x14121c, 0.075),                // scabbard (saya)
+      kg(0.035, 0.1, 0.17, 0.215, C.gold, 0.1),                    // hand guard (tsuba)
+      kg(0.26, 0.05, 0.28, 0.37, 0x1d2142, 0.06),                  // wrapped grip (tsuka)
+      kg(0.05, 0.065, -0.405, -0.585, C.red, 0.08),                // scabbard end cap (kojiri)
+      kg(0.18, 0.07, -0.05, -0.12, C.red, 0.09),                   // sash cord binding it to the belt
+    ], lit, hip);
+    mesh([kg(0.7, 0.014, -0.1, -0.2, C.cyan, 0.014)], glow, hip);
 
     // ---------- spine / chest ----------
     const spine = pivot(hip, 0, 0.1, 0, SP);
@@ -87,14 +100,11 @@ export class Hero {
       // jet-pack with nozzles, katana sheath + hilt + guard on the back
       box(0.3, 0.3, 0.12, 0, 0.34, -0.2, C.plate), box(0.24, 0.04, 0.13, 0, 0.5, -0.2, C.plateL),
       rcyl(0.05, 0.065, 0.1, 6, 0.08, 0.2, -0.27, C.plateL, PI / 2), rcyl(0.05, 0.065, 0.1, 6, -0.08, 0.2, -0.27, C.plateL, PI / 2),
-      rbox(0.05, 0.05, 1.05, 0.0, 0.42, -0.3, 0x0c0c12, 0, 0, 0.65), rbox(0.07, 0.07, 0.2, -0.33, 0.72, -0.3, C.gold, 0, 0, 0.65),
-      rcyl(0.07, 0.07, 0.015, 8, -0.27, 0.65, -0.3, C.gold, 0, 0.65 + PI / 2),
     ], lit, spine);
     mesh([
       rcyl(0.05, 0.05, 0.025, 6, 0, 0.38, 0.185, C.cyan, PI / 2), box(0.02, 0.2, 0.01, 0.12, 0.36, 0.185, C.cyan), box(0.02, 0.2, 0.01, -0.12, 0.36, 0.185, C.cyan),
       box(0.4, 0.015, 0.01, 0, 0.27, 0.185, C.cyan),
       rcyl(0.045, 0.045, 0.02, 6, 0.08, 0.2, -0.325, C.cyan, PI / 2), rcyl(0.045, 0.045, 0.02, 6, -0.08, 0.2, -0.325, C.cyan, PI / 2),
-      rbox(0.02, 0.02, 0.95, 0.0, 0.42, -0.31, C.cyan, 0, 0, 0.65),
     ], glow, spine);
 
     // ---------- head ----------

@@ -1,7 +1,6 @@
 /** Shared geometry + material library. Material budget: 11 materials for the whole world + character (crystal and lava are the only emissive additions, both for island identity). */
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CLS_H } from '../world/terrain';
 
 export function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   const c = new THREE.Color(hex);
@@ -23,9 +22,9 @@ function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTex
   const a = document.createElement('canvas'); a.width = a.height = S;
   const b = document.createElement('canvas'); b.width = b.height = S;
   const ca = a.getContext('2d')!, cb = b.getContext('2d')!;
-  ca.fillStyle = '#1a1e33'; ca.fillRect(0, 0, S, S);
+  ca.fillStyle = '#e9e4da'; ca.fillRect(0, 0, S, S);
   cb.fillStyle = '#000'; cb.fillRect(0, 0, S, S);
-  const lit = ['#ffd9a0', '#9ff3ff', '#ff9ad0', '#ffe9c0'];
+  const lit = ['#ffd9a0', '#ffe6b8', '#ffd9a0', '#9fdfff'];
   let seed = 12345;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) | 0) >>> 0) / 4294967295;
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -34,7 +33,7 @@ function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTex
       const col = lit[Math.floor(rnd() * lit.length)];
       ca.fillStyle = col; ca.fillRect(x, y, w, h);
       cb.fillStyle = col; cb.fillRect(x, y, w, h);
-    } else { ca.fillStyle = '#0b0e1c'; ca.fillRect(x, y, w, h); }
+    } else { ca.fillStyle = '#34506a'; ca.fillRect(x, y, w, h); }
   }
   const mk = (c: HTMLCanvasElement, srgb: boolean) => {
     const t = new THREE.CanvasTexture(c);
@@ -50,7 +49,12 @@ export class Assets {
   readonly terrain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
   readonly props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
   readonly glow = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  /** far-LOD facade: shared window atlas tinted per building by vertex colour */
   readonly building: THREE.MeshStandardMaterial;
+  /** all paved ground (gravel roads, sidewalks, flagstone paths) */
+  readonly ground = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  /** unlit vertex-colour emissives: lit windows, neon, lantern flames, beacons */
+  readonly lights = new THREE.MeshBasicMaterial({ vertexColors: true });
   readonly road = new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.7 });
   readonly sea = new THREE.MeshStandardMaterial({ color: 0x0b3a5a, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.88 });
   readonly agents = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
@@ -76,7 +80,6 @@ export class Assets {
   readonly orb = new THREE.SphereGeometry(0.4, 6, 4);
   readonly sign = new THREE.BoxGeometry(4, 1.4, 0.25);
   readonly roadStrip = new THREE.BoxGeometry(1, 0.3, 1);
-  readonly bldg: THREE.BufferGeometry[] = [];
   readonly person: THREE.BufferGeometry;
   readonly car: THREE.BufferGeometry;
 
@@ -84,8 +87,8 @@ export class Assets {
 
   constructor() {
     this.building = new THREE.MeshStandardMaterial({
-      map: this.tex.map, emissiveMap: this.tex.emissive, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.2,
-      roughness: 0.55, metalness: 0.25,
+      map: this.tex.map, emissiveMap: this.tex.emissive, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.05, vertexColors: true,
+      roughness: 0.7, metalness: 0.05,
     });
 
     this.tree = mergeGeometries([
@@ -129,15 +132,6 @@ export class Assets {
       ...[-36, -18, 0, 18, 36].flatMap((x) => [box(0.4, 1.3, 0.4, x, 0.65, 2.6, 0xd8322f), box(0.4, 1.3, 0.4, x, 0.65, -2.6, 0xd8322f)]),
     ])!;
 
-    for (let k = 0; k < 3; k++) {
-      const H = CLS_H[k];
-      const g = new THREE.BoxGeometry(36, H, 36);
-      g.translate(0, H / 2, 0);
-      const uv = g.attributes.uv as THREE.BufferAttribute;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.5, uv.getY(i) * (H / 80));
-      this.bldg.push(g);
-    }
-
     const p = new THREE.CapsuleGeometry(0.28, 0.9, 3, 6); p.translate(0, 0.73, 0);
     this.person = p;
     this.car = mergeGeometries([
@@ -147,12 +141,13 @@ export class Assets {
   }
 
   setWireframe(on: boolean): void {
-    for (const m of [this.terrain, this.props, this.building, this.road, this.agents, this.pillar, this.crystal]) m.wireframe = on;
+    for (const m of [this.terrain, this.props, this.building, this.road, this.agents, this.pillar, this.crystal, this.ground, this.lights]) m.wireframe = on;
   }
 
   /** night in 0..1 drives emissive + glow materials */
   setNight(night: number): void {
-    this.building.emissiveIntensity = 0.15 + 2.2 * night;
+    this.building.emissiveIntensity = 0.03 + 2.2 * night;
+    this.lights.color.setScalar(0.1 + 1.15 * night);
     this.glow.color.setScalar(0.35 + 0.9 * night);
     this.pillarGlow.color.setRGB(0.25 + 0.5 * night, 0.9, 1);
     this.crystal.emissiveIntensity = 0.25 + 1.4 * night;

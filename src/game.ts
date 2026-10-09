@@ -8,18 +8,19 @@ import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/enti
 import { Input } from './core/input';
 import { Network } from './network/network';
 import { DynamicResolution, type DeviceProfile } from './core/device';
-import { ISLANDS, blocked, heightAt, islandAt, sstep, zoneAt, type IslandId } from './world/terrain';
+import { ISLANDS, heightAt, islandAt, sstep, zoneAt, type IslandId } from './world/terrain';
 import { kvSet } from './core/store';
 
 export interface SaveData { x: number; z: number; time: number }
 
 /** Per-island atmosphere: fog tint strength, fog distance multiplier, and whether it snows. */
-const ATMOS: Record<IslandId, { tint: THREE.Color; amt: number; fog: number; snow: boolean }> = {
-  valley: { tint: new THREE.Color(0xffc9dc), amt: 0.1, fog: 1, snow: false },
-  city: { tint: new THREE.Color(0x6a4cff), amt: 0.08, fog: 1, snow: false },
-  god: { tint: new THREE.Color(0xf0e2c0), amt: 0.35, fog: 0.8, snow: false },
-  ember: { tint: new THREE.Color(0x8a2410), amt: 0.5, fog: 0.8, snow: false },
-  snow: { tint: new THREE.Color(0xe2f0ff), amt: 0.5, fog: 0.6, snow: true },
+const ATMOS: Record<IslandId, { tint: THREE.Color; amt: number; fog: number; snow: boolean; light: number }> = {
+  valley: { tint: new THREE.Color(0xffc9dc), amt: 0.1, fog: 1, snow: false, light: 1 },
+  city: { tint: new THREE.Color(0x6a4cff), amt: 0.06, fog: 1.1, snow: false, light: 1 },
+  god: { tint: new THREE.Color(0x9fc4d6), amt: 0.55, fog: 0.5, snow: false, light: 0.62 }, // cold, dim, thick mist: an eerie sacred precinct
+  ember: { tint: new THREE.Color(0x8a2410), amt: 0.5, fog: 0.8, snow: false, light: 0.9 },
+  snow: { tint: new THREE.Color(0xe2f0ff), amt: 0.5, fog: 0.75, snow: true, light: 1 },
+  islet: { tint: new THREE.Color(0xd8ecff), amt: 0.12, fog: 1, snow: false, light: 1 },
 };
 const TINT = new THREE.Color();
 const SKY_DAY = new THREE.Color(0x8fcbff), SKY_DUSK = new THREE.Color(0xff9a6b), SKY_NIGHT = new THREE.Color(0x050818);
@@ -62,11 +63,11 @@ export class Game {
   private zoneEl = document.getElementById('zone')!;
   private lastZone = '';
   private uiKey = -1; private glowQ = -1; private camD = 7.5;
-  private trail = new Particles(260, 0.55); private dust = new Particles(160, 1.1, -1.2, 0.97);
+  private trail = new Particles(260, 0.55); private spirits = new Particles(160, 1.3); private dust = new Particles(160, 1.1, -1.2, 0.97);
   private speedLines = new SpeedLines(); private hoverRing = new HoverRing();
   private speedEl = document.getElementById('speedfx')!;
   private zoneId: IslandId = 'valley';
-  private atm = { amt: 0.1, fog: 1, color: new THREE.Color(0xffc9dc) };
+  private atm = { amt: 0.1, fog: 1, light: 1, color: new THREE.Color(0xffc9dc) };
   private snowing = false;
 
   constructor(private canvas: HTMLCanvasElement, private profile: DeviceProfile) {
@@ -80,6 +81,7 @@ export class Game {
     const q = this.profile.q;
 
     this.world = new World(this.assets);
+    this.world.nearDetail = q.detailWindows;
     this.scene.add(this.world.group);
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
@@ -93,7 +95,7 @@ export class Game {
     this.npc = new NpcSystem(q.npc, this.assets);
     this.traffic = new TrafficSystem(q.traffic, this.assets);
     this.remotes = new RemotePlayers(this.assets);
-    this.scene.add(this.npc.mesh, this.traffic.mesh, this.remotes.mesh, this.trail.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
+    this.scene.add(this.npc.mesh, this.traffic.mesh, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
 
     // lighting: one directional (sun/moon) + hemisphere probe-style fill. No other dynamic lights.
     this.scene.add(this.sun, this.sun.target, this.hemi);
@@ -258,7 +260,11 @@ export class Game {
         this.dust.emit(P.x, P.y + 0.15, P.z, Math.cos(a) * v, 0.5 + Math.random() * 2.5, Math.sin(a) * v, 0.9, 0.7, 0.62, 0.5);
       }
     }
-    this.trail.update(dt); this.dust.update(dt);
+    if (this.zoneId === 'god' && Math.random() < dt * 16) { // drifting spirit lights: the sacred island feels haunted
+      const a = Math.random() * 6.283, r = 6 + Math.random() * 40;
+      this.spirits.emit(P.x + Math.cos(a) * r, Math.max(heightAt(P.x, P.z), 0) + 0.5 + Math.random() * 5, P.z + Math.sin(a) * r, (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.8, (Math.random() - 0.5) * 0.6, 5 + Math.random() * 3, 0.45, 0.9, 1);
+    }
+    this.trail.update(dt); this.dust.update(dt); this.spirits.update(dt);
     const c = this.camera.position;
     this.speedLines.update(dt, sp, P.vx, P.vy, P.vz, c.x, c.y, c.z);
     this.hoverRing.update(fly, P.x, Math.max(heightAt(P.x, P.z), 0), P.z, P.y - Math.max(heightAt(P.x, P.z), 0), now / 1000);
@@ -293,7 +299,7 @@ export class Game {
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day).lerp(SKY_DUSK, dusk * 0.7 * (1 - Math.abs(night - 0.5) * 0.4));
     const wet = 1 - this.rainNow * 0.45;
     const A = ATMOS[this.zoneId], k = 0.02;
-    this.atm.amt += (A.amt - this.atm.amt) * k; this.atm.fog += (A.fog - this.atm.fog) * k; this.atm.color.lerp(A.tint, k);
+    this.atm.amt += (A.amt - this.atm.amt) * k; this.atm.fog += (A.fog - this.atm.fog) * k; this.atm.light += (A.light - this.atm.light) * k; this.atm.color.lerp(A.tint, k);
     sky.lerp(TINT.copy(this.atm.color).multiplyScalar(0.2 + 0.8 * day), this.atm.amt);
     sky.multiplyScalar(wet);
     (this.scene.background as THREE.Color).copy(sky);
@@ -306,8 +312,8 @@ export class Game {
     this.sun.position.set(P.x + dir.x * 220, P.y + dir.y * 220, P.z + dir.z * 220);
     this.sun.target.position.set(P.x, P.y, P.z);
     this.sun.color.copy(MOON).lerp(SUN_DAY, day).lerp(SUN_DUSK, dusk * 0.8);
-    this.sun.intensity = (0.35 + 2.1 * day) * (1 - this.rainNow * 0.5);
-    this.hemi.intensity = 0.25 + 0.75 * day;
+    this.sun.intensity = (0.35 + 2.1 * day) * (1 - this.rainNow * 0.5) * this.atm.light;
+    this.hemi.intensity = (0.25 + 0.75 * day) * (0.55 + 0.45 * this.atm.light);
     this.hemi.color.copy(sky).lerp(new THREE.Color(0xffffff), 0.35);
     this.assets.setNight(night * (0.7 + 0.3 * this.rainNow));
     (this.stars.material as THREE.PointsMaterial).opacity = Math.max(0, night - 0.35) * (1 - this.rainNow);

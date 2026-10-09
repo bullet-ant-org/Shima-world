@@ -1,4 +1,4 @@
-/** Procedural world definition shared by streaming, props, simulation and collision. */
+/** Procedural world definition shared by streaming, props, simulation and collision. Pure functions, no dependencies. */
 export const CHUNK = 128;
 export const SEA = -8;
 
@@ -6,7 +6,7 @@ const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 export const sstep = (a: number, b: number, x: number) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 
-function hash2(x: number, z: number): number {
+export function hash2(x: number, z: number): number {
   let h = (Math.imul(x, 374761393) + Math.imul(z, 668265263)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
@@ -17,6 +17,8 @@ export function noise2(x: number, z: number): number {
   const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
   return mix(mix(hash2(xi, zi), hash2(xi + 1, zi), u), mix(hash2(xi, zi + 1), hash2(xi + 1, zi + 1), u), v);
 }
+/** two octaves, 0..1 */
+export const fbm = (x: number, z: number) => noise2(x, z) * 0.65 + noise2(x * 2.1 + 7.3, z * 2.1 - 3.1) * 0.35;
 export function mulberry32(a: number): () => number {
   return () => {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -26,81 +28,122 @@ export function mulberry32(a: number): () => number {
   };
 }
 
-export const riverX = (z: number) => -700 + Math.sin(z * 0.008) * 60 + Math.sin(z * 0.021) * 15;
-
-// ---- Five islands, separated by open sea ----
-export type IslandId = 'valley' | 'city' | 'god' | 'ember' | 'snow';
+// ---------------------------------------------------------------------------------------------------------------------
+// Islands. The map spans roughly 7 km x 7 km. Five major islands plus five islets, all separated by open sea.
+// ---------------------------------------------------------------------------------------------------------------------
+export type IslandId = 'valley' | 'city' | 'god' | 'ember' | 'snow' | 'islet';
 export type Zone = IslandId | 'sea';
 export interface Island {
-  id: IslandId; name: string; title: string;
+  key: string; id: IslandId; name: string; title: string;
   cx: number; cz: number; rx: number; rz: number;
-  /** superellipse exponent: 2 = ellipse, large = rounded rectangle (the city grid needs square corners) */
+  /** superellipse exponent: 2 = ellipse */
   p: number;
   /** coastline ramp: land fades out between these normalised radii */
   ramp: [number, number];
   spawn: { x: number; z: number };
 }
 export const ISLANDS: Island[] = [
-  { id: 'valley', name: 'SAKURA VALLEY', title: 'Sakura Valley', cx: -740, cz: 40, rx: 540, rz: 480, p: 2, ramp: [0.62, 1], spawn: { x: -520, z: 60 } },
-  { id: 'city', name: 'CYBER CITY', title: 'The City', cx: 512, cz: 0, rx: 560, rz: 520, p: 12, ramp: [0.93, 1], spawn: { x: 512, z: 64 } },
-  { id: 'god', name: 'GOD ISLAND', title: 'God Island', cx: -100, cz: -1500, rx: 560, rz: 560, p: 2, ramp: [0.65, 1], spawn: { x: -100, z: -1160 } },
-  { id: 'ember', name: 'EMBER ISLE', title: 'Ember Isle (volcano)', cx: 560, cz: 1150, rx: 480, rz: 440, p: 2, ramp: [0.62, 1], spawn: { x: 560, z: 1500 } },
-  { id: 'snow', name: 'YUKIGAMI PEAKS', title: 'Yukigami Peaks (snow)', cx: -740, cz: 1150, rx: 480, rz: 440, p: 2, ramp: [0.62, 1], spawn: { x: -740, z: 1450 } },
+  { key: 'valley', id: 'valley', name: 'SAKURA VALLEY', title: 'Sakura Valley', cx: -2100, cz: 100, rx: 900, rz: 820, p: 2, ramp: [0.62, 1], spawn: { x: -1640, z: 200 } },
+  { key: 'city', id: 'city', name: 'CYBER CITY', title: 'The City', cx: 0, cz: 0, rx: 1050, rz: 950, p: 2.4, ramp: [0.9, 1], spawn: { x: 0, z: 68 } },
+  { key: 'god', id: 'god', name: 'GOD ISLAND', title: 'God Island', cx: -300, cz: -2500, rx: 1050, rz: 1050, p: 2, ramp: [0.7, 1], spawn: { x: -300, z: -1870 } },
+  { key: 'ember', id: 'ember', name: 'EMBER ISLE', title: 'Ember Isle (volcano)', cx: 1500, cz: 1900, rx: 800, rz: 720, p: 2, ramp: [0.62, 1], spawn: { x: 1500, z: 2420 } },
+  { key: 'snow', id: 'snow', name: 'YUKIGAMI PEAKS', title: 'Yukigami Peaks (snow)', cx: -1900, cz: 1900, rx: 850, rz: 780, p: 2, ramp: [0.62, 1], spawn: { x: -1860, z: 2330 } },
+  { key: 'moon', id: 'islet', name: 'TSUKI ROCK', title: 'Tsuki Rock (islet)', cx: -1300, cz: -1450, rx: 260, rz: 240, p: 2, ramp: [0.55, 1], spawn: { x: -1300, z: -1320 } },
+  { key: 'fox', id: 'islet', name: 'KITSUNE ISLE', title: 'Kitsune Isle (islet)', cx: 750, cz: 1150, rx: 280, rz: 250, p: 2, ramp: [0.55, 1], spawn: { x: 750, z: 1260 } },
+  { key: 'reef', id: 'islet', name: 'CRYSTAL REEF', title: 'Crystal Reef (islet)', cx: -2050, cz: 1020, rx: 240, rz: 230, p: 2, ramp: [0.55, 1], spawn: { x: -2050, z: 1110 } },
+  { key: 'arch', id: 'islet', name: 'ARCH ROCKS', title: 'Arch Rocks (islet)', cx: 1250, cz: -1500, rx: 250, rz: 240, p: 2, ramp: [0.55, 1], spawn: { x: 1250, z: -1390 } },
+  { key: 'cairn', id: 'islet', name: 'CAIRN ISLE', title: 'Cairn Isle (islet)', cx: 1850, cz: -150, rx: 320, rz: 280, p: 2, ramp: [0.55, 1], spawn: { x: 1850, z: -30 } },
 ];
-const BY_ID = Object.fromEntries(ISLANDS.map((i) => [i.id, i])) as Record<IslandId, Island>;
-export const GOD = { x: BY_ID.god.cx, z: BY_ID.god.cz };
+export const MAJOR = ISLANDS.slice(0, 5);
+const BY_KEY = Object.fromEntries(ISLANDS.map((i) => [i.key, i])) as Record<string, Island>;
+export const island = (k: string) => BY_KEY[k];
+export const GOD = { x: BY_KEY.god.cx, z: BY_KEY.god.cz };
+export const CITY_C = { x: BY_KEY.city.cx, z: BY_KEY.city.cz };
 
-// landmark anchors shared by terrain, streaming, collision and the resident skyline
-export const SPIRE = { x: 544, z: 32, r: 15, h: 440 };                       // city: neon spire (block 8,0 is its plaza)
-export const VOLCANO = { x: 520, z: 1120 };                                  // ember isle
-export const LAKE = { x: -700, z: 1170, r: 130 };                            // snow peaks: frozen lake
-export const HILL = { x: -540, z: -140 };                                    // valley: shrine hill
-export const RICE = { x0: -600, x1: -440, z0: 60, z1: 200 };
-export const BRIDGES_Z = [-210, 120, 320];
+// landmark anchors shared by terrain, streaming, collision and layout
+export const SPIRE = { x: CITY_C.x, z: CITY_C.z, r: 16, h: 460 };
+export const VOLCANO = { x: BY_KEY.ember.cx - 60, z: BY_KEY.ember.cz - 40 };
+export const LAKE = { x: BY_KEY.snow.cx + 120, z: BY_KEY.snow.cz + 60, r: 200 };
+export const HILL = { x: BY_KEY.valley.cx + 240, z: BY_KEY.valley.cz - 330 };
+export const RICE = { x0: BY_KEY.valley.cx + 400, x1: BY_KEY.valley.cx + 680, z0: BY_KEY.valley.cz + 200, z1: BY_KEY.valley.cz + 420 };
+export const BRIDGES_Z = [BY_KEY.valley.cz - 260, BY_KEY.valley.cz + 20, BY_KEY.valley.cz + 330];
+export const riverX = (z: number) => BY_KEY.valley.cx + 200 + Math.sin(z * 0.004) * 130 + Math.sin(z * 0.011) * 32;
 
-function dist(isl: Island, x: number, z: number): number {
-  const dx = Math.abs(x - isl.cx) / isl.rx, dz = Math.abs(z - isl.cz) / isl.rz;
-  const d = isl.p === 2 ? Math.hypot(dx, dz) : Math.pow(Math.pow(dx, isl.p) + Math.pow(dz, isl.p), 1 / isl.p);
-  // organic coastline everywhere except the city, whose grid needs straight edges
-  return isl.id === 'city' ? d : d * (1 + (noise2(x * 0.004 + isl.cx, z * 0.004) - 0.5) * 0.22);
+/** Broad massif: smooth, wide-based, and gentle enough that slopes stay under ~45 degrees (max grade ~0.8 * H/R). */
+const massif = (x: number, z: number, px: number, pz: number, H: number, R: number): number => {
+  const r = Math.hypot(x - px, z - pz) / R;
+  return r > 2.4 ? 0 : H * Math.exp(-Math.pow(r, 1.8));
+};
+
+/** Smooth maximum of several massifs (a p-norm), so overlapping peaks merge into ridges instead of stacking to absurd heights. */
+const range = (x: number, z: number, list: number[][]): number => {
+  let s = 0;
+  for (const p of list) { const h = massif(x, z, p[0], p[1], p[2], p[3]); s += h * h * h; }
+  return Math.cbrt(s);
+};
+
+// Peaks sit well inside their island (normalised radius < ~0.5) so the coast mask never squashes them into cliffs.
+const VALLEY_PEAKS: number[][] = [[-2400, -60, 360, 430], [-2350, 300, 300, 380], [-2300, -380, 320, 400], [-2520, 120, 440, 470], [-2250, 520, 250, 340]];
+const SNOW_PEAKS: number[][] = [[-2280, 1700, 580, 540], [-1850, 1500, 400, 420], [-2250, 2090, 340, 390], [-2050, 2190, 260, 330], [-2000, 1420, 330, 380]];
+const GOD_PEAKS: number[][] = [];
+for (let i = 0; i < 6; i++) {
+  const a = Math.PI * (1.2 + (i / 5) * 0.6); // a horseshoe of mountains around the north, leaving the south open for the pilgrim road
+  GOD_PEAKS.push([GOD.x + Math.cos(a) * 650, GOD.z + Math.sin(a) * 650, 300 + ((i * 53) % 90), 260 + ((i * 37) % 50)]);
 }
-const maskOf = (isl: Island, d: number) => 1 - sstep(isl.ramp[0], isl.ramp[1], d);
 
-function islandHeight(id: IslandId, x: number, z: number, d: number): number {
-  switch (id) {
+/** Terrain = base land (shaped by the coastline mask) + mountains (faded in separately so peaks never get squashed into cliffs). */
+const PART = { b: 0, m: 0 };
+function islandParts(isl: Island, x: number, z: number): typeof PART {
+  PART.m = 0;
+  switch (isl.key) {
     case 'valley': {
-      const rolling = 10 + Math.sin(x * 0.011) * Math.cos(z * 0.013) * 9 + noise2(x * 0.02, z * 0.02) * 8 + Math.sin(x * 0.027 + z * 0.019) * 3;
+      const mount = range(x, z, VALLEY_PEAKS);
       const dr = x - riverX(z);
-      const river = -16 * Math.exp(-(dr * dr) / (2 * 20 * 20));
-      const ridge = Math.max(sstep(-930, -1090, x), sstep(-200, -330, z) * 0.85);
-      const mount = ridge * 110 * (0.5 + noise2(x * 0.006, z * 0.006));
+      const river = -20 * Math.exp(-(dr * dr) / (2 * 26 * 26));
       const hx = x - HILL.x, hz = z - HILL.z;
-      const hill = 52 * Math.exp(-(hx * hx + hz * hz) / (2 * 75 * 75));
-      return rolling + river * (1 - ridge) + mount + hill;
+      PART.b = 12 + Math.sin(x * 0.0055) * Math.cos(z * 0.0065) * 10 + fbm(x * 0.01, z * 0.01) * 12 + Math.sin(x * 0.013 + z * 0.009) * 4
+        + river * (1 - sstep(30, 140, mount)) + 85 * Math.exp(-(hx * hx + hz * hz) / (2 * 150 * 150));
+      PART.m = mount; return PART;
     }
-    case 'city':
-      return 3;
+    case 'city': PART.b = 3; return PART;
     case 'god': {
-      const dg = Math.hypot(x - GOD.x, z - GOD.z) / 560;
-      return 22 + noise2(x * 0.01, z * 0.01) * 30 + Math.sin(x * 0.03) * Math.cos(z * 0.025) * 6 + (1 - sstep(0, 0.5, dg)) * 30;
+      const dg = Math.hypot(x - GOD.x, z - GOD.z) / 1050;
+      // sacred terraces: the land climbs from the shore to the altar plateau in broad, stone-edged steps
+      const t = (1 - sstep(0.2, 0.86, dg)) * 5, f = t - Math.floor(t);
+      PART.b = 6 + 15 * (Math.floor(t) + sstep(0.3, 0.7, f)) + fbm(x * 0.012, z * 0.012) * 8;
+      // mountains only rise outside the sacred plateau, leaving a flat, terraced precinct for the temples
+      PART.m = range(x, z, GOD_PEAKS) * sstep(430, 640, Math.hypot(x - GOD.x, z - GOD.z)); return PART;
     }
     case 'ember': {
       const r = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
       const a = Math.atan2(z - VOLCANO.z, x - VOLCANO.x);
-      const cone = 200 * Math.pow(Math.max(0, 1 - Math.max(r, 70) / 320), 1.3); // flat-topped: rim ring at r~70, crater bowl inside
-      const crater = (1 - sstep(25, 75, r)) * 95;
-      const ribs = Math.sin(a * 9 + noise2(x * 0.01, z * 0.01) * 4) * 9 * (1 - sstep(120, 280, r)) * sstep(40, 90, r);
-      return 8 + noise2(x * 0.015, z * 0.015) * 10 + cone - crater + ribs;
+      const cone = 400 * Math.pow(Math.max(0, 1 - Math.max(r, 140) / 560), 1.35); // flat rim at r<140, crater inside
+      const crater = (1 - sstep(40, 130, r)) * 150;
+      const ribs = Math.sin(a * 9 + fbm(x * 0.006, z * 0.006) * 5) * 14 * (1 - sstep(180, 460, r)) * sstep(70, 160, r);
+      PART.b = 10 + fbm(x * 0.009, z * 0.009) * 14 + ribs;
+      PART.m = cone - crater + massif(x, z, isl.cx + 440, isl.cz + 120, 170, 220); return PART;
     }
     case 'snow': {
       const r = Math.hypot(x - LAKE.x, z - LAKE.z);
-      const ridged = 1 - Math.abs(2 * noise2(x * 0.007, z * 0.007) - 1);
-      const peaks = sstep(150, 330, r) * 125 * Math.pow(ridged, 2.2);
-      const base = 12 + noise2(x * 0.02, z * 0.02) * 14 + peaks;
-      return mix(base, 2.4, 1 - sstep(LAKE.r - 30, LAKE.r + 40, r));
+      const b = 14 + fbm(x * 0.012, z * 0.012) * 18;
+      PART.b = mix(b, 2.4, 1 - sstep(LAKE.r - 40, LAKE.r + 60, r));
+      PART.m = range(x, z, SNOW_PEAKS) * sstep(LAKE.r, LAKE.r + 560, r); return PART; // the lake sits in a gentle bowl, peaks stand back
     }
+    case 'moon': PART.b = 14 + fbm(x * 0.03, z * 0.03) * 6; PART.m = massif(x, z, isl.cx, isl.cz, 60, 140); return PART;
+    case 'fox': PART.b = 10 + fbm(x * 0.03, z * 0.03) * 5; PART.m = massif(x, z, isl.cx - 30, isl.cz - 20, 50, 140); return PART;
+    case 'reef': PART.b = 7 + fbm(x * 0.04, z * 0.04) * 6; return PART;
+    case 'arch': PART.b = 12 + fbm(x * 0.03, z * 0.03) * 8; PART.m = massif(x, z, isl.cx, isl.cz, 70, 120); return PART;
+    default: PART.b = 11 + fbm(x * 0.03, z * 0.03) * 6; PART.m = massif(x, z, isl.cx, isl.cz, 80, 150); return PART; // cairn
   }
 }
+
+function dist(isl: Island, x: number, z: number): number {
+  const dx = Math.abs(x - isl.cx) / isl.rx, dz = Math.abs(z - isl.cz) / isl.rz;
+  const d = isl.p === 2 ? Math.hypot(dx, dz) : Math.pow(Math.pow(dx, isl.p) + Math.pow(dz, isl.p), 1 / isl.p);
+  // organic coastline; the city keeps a calmer one so its ring roads stay inside
+  return d * (1 + (noise2(x * 0.0025 + isl.cx, z * 0.0025 + isl.cz) - 0.5) * (isl.id === 'city' ? 0.08 : 0.22));
+}
+const maskOf = (isl: Island, d: number) => 1 - sstep(isl.ramp[0], isl.ramp[1], d);
 
 export function islandAt(x: number, z: number): Island | null {
   let best: Island | null = null, bm = 0;
@@ -118,8 +161,8 @@ export function heightAt(x: number, z: number): number {
     if (Math.abs(x - isl.cx) > isl.rx * 1.3 || Math.abs(z - isl.cz) > isl.rz * 1.3) continue;
     const d = dist(isl, x, z);
     if (d >= isl.ramp[1]) continue;
-    const m = maskOf(isl, d);
-    const h = SEA + (islandHeight(isl.id, x, z, d) - SEA) * m;
+    const q = islandParts(isl, x, z);
+    const h = SEA + (q.b - SEA) * maskOf(isl, d) + q.m * (1 - sstep(isl.id === 'islet' ? 0.4 : 0.38, isl.id === 'islet' ? 0.95 : 1.02, d));
     if (h > best) best = h;
   }
   return best;
@@ -130,60 +173,18 @@ export function zoneAt(x: number, z: number): Zone {
   return islandAt(x, z)?.id ?? 'sea';
 }
 
+/** terrain gradient magnitude (rise over run) */
+export function slopeAt(x: number, z: number): number {
+  const e = 2;
+  return Math.hypot(heightAt(x + e, z) - heightAt(x - e, z), heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
+}
+
 /** 0..1 lava coverage on Ember Isle: radial streams down the volcano plus the crater lake. */
 export function lavaAt(x: number, z: number): number {
   const r = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
-  if (r < 42) return 1;
-  if (r > 300) return 0;
+  if (r < 85) return 1;
+  if (r > 520) return 0;
   const a = Math.atan2(z - VOLCANO.z, x - VOLCANO.x);
-  const w = Math.abs(Math.sin(a * 4.5 + r * 0.012 + noise2(x * 0.02, z * 0.02) * 3));
-  return (1 - sstep(0.035, 0.09, w)) * (1 - sstep(190, 300, r));
-}
-
-// ---- City layout: 64 m blocks, roads on multiples of 64 ----
-export const BLOCK = 64;
-export const CITY = { bi0: 1, bi1: 14, bj0: -7, bj1: 6 };
-export const CLS_H = [50, 110, 190];
-export interface Bldg { x: number; z: number; w: number; d: number; h: number; cls: 0 | 1 | 2; shrine: boolean }
-
-export function cityBlock(bi: number, bj: number): Bldg | null {
-  if (bi < CITY.bi0 || bi > CITY.bi1 || bj < CITY.bj0 || bj > CITY.bj1) return null;
-  const r = mulberry32(Math.imul(bi, 73856093) ^ Math.imul(bj, 19349663));
-  const cx = bi * BLOCK + 32, cz = bj * BLOCK + 32;
-  if (bi === 8 && bj === 0) return null; // the spire's plaza
-  const shrine = r() < 0.1;
-  const w = 26 + r() * 20, d = 26 + r() * 20;
-  const dd = Math.min(1, Math.hypot(cx - 512, cz) / 520);
-  let h = 22 + (1 - dd) * 170 * (0.35 + r() * 0.65);
-  if (shrine) h = 0;
-  const cls: 0 | 1 | 2 = h < 70 ? 0 : h < 130 ? 1 : 2;
-  return { x: cx, z: cz, w, d, h, cls, shrine };
-}
-
-/** Top surface (world y) of whatever solid occupies this column, or -Infinity. Used so flyers can pass over towers. */
-export function blockTop(x: number, z: number): number {
-  if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return 3 + SPIRE.h;
-  const b = cityBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
-  if (!b || b.shrine) return -Infinity;
-  return Math.abs(x - b.x) < b.w / 2 + 0.4 && Math.abs(z - b.z) < b.d / 2 + 0.4 ? 3 + b.h : -Infinity;
-}
-/** Collision against city towers (axis-aligned footprints) for walkers. */
-export const blocked = (x: number, z: number): boolean => blockTop(x, z) > -Infinity;
-
-export const inCity = (x: number, z: number) => x > 64 && x < 960 && z > -448 && z < 448;
-
-// ---- Sakura Valley sacred path: a climb of torii gates up the shrine hill ----
-export interface Gate { x: number; z: number; ry: number; s: number }
-export function senbonTorii(): Gate[] {
-  const out: Gate[] = [];
-  const n = 16, x0 = -470, z0 = 10;
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    const bend = Math.sin(t * Math.PI * 1.5) * 26;
-    const x = x0 + (HILL.x + 20 - x0) * t + bend, z = z0 + (HILL.z + 10 - z0) * t;
-    const t2 = Math.min(1, t + 0.05);
-    const dx = (x0 + (HILL.x + 20 - x0) * t2 + Math.sin(t2 * Math.PI * 1.5) * 26) - x, dz = (z0 + (HILL.z + 10 - z0) * t2) - z;
-    out.push({ x, z, ry: Math.atan2(dx, dz), s: 1.1 - t * 0.2 });
-  }
-  return out;
+  const w = Math.abs(Math.sin(a * 5.5 + r * 0.006 + noise2(x * 0.012, z * 0.012) * 3));
+  return (1 - sstep(0.03, 0.08, w)) * (1 - sstep(300, 520, r));
 }

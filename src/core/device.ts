@@ -13,6 +13,7 @@ export interface Quality {
   traffic: number;
   rain: number;         // max rain particles
   fogFar: number;
+  detailWindows: boolean; // protruding window geometry on nearby buildings (off: textured facades only)
 }
 
 export interface DeviceProfile {
@@ -41,7 +42,8 @@ export function qualityFor(gpu: DeviceProfile['gpuTier'], cpu: DeviceProfile['cp
     npc: c === 'high' ? 220 : c === 'mid' ? 120 : 50,
     traffic: c === 'high' ? 60 : c === 'mid' ? 32 : 14,
     rain: g === 'high' ? 2400 : g === 'mid' ? 1400 : 600,
-    fogFar: g === 'high' ? 1100 : g === 'mid' ? 850 : 650,
+    fogFar: g === 'high' ? 1300 : g === 'mid' ? 1000 : 750,
+    detailWindows: g !== 'low',
   };
 }
 
