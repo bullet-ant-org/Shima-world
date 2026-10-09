@@ -92,7 +92,7 @@ export class Hero {
   private readonly rig = new THREE.Group();
 
   constructor(assets: Assets) {
-    const lit = assets.props, glow = assets.pillarGlow;
+    const lit = assets.rig, glow = assets.pillarGlow;
     const mesh = (geos: THREE.BufferGeometry[], mat: THREE.Material, parent: THREE.Object3D) => {
       const g = mergeGeometries(geos)!;
       const m = new THREE.Mesh(g, mat); m.castShadow = mat === lit; parent.add(m);
@@ -110,7 +110,7 @@ export class Hero {
       let lo = 1e9, hi = -1e9; for (let i = 0; i < n; i++) { lo = Math.min(lo, p.getY(i)); hi = Math.max(hi, p.getY(i)); }
       const tmp = new THREE.Color();
       for (let i = 0; i < n; i++) { tmp.copy(ca).lerp(cb, (p.getY(i) - lo) / Math.max(1e-6, hi - lo)); col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b; }
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('kind', new THREE.BufferAttribute(new Float32Array(n), 1)); return g;
     };
     const E = (rx: number, ry: number, rz: number, x: number, y: number, z: number, c: number, seg = 12, rotX = 0, rotZ = 0, c2: number | null = null): THREE.BufferGeometry => {
       const g = new THREE.SphereGeometry(1, seg, Math.max(6, seg - 4)); g.scale(rx, ry, rz); g.rotateX(rotX); g.rotateZ(rotZ); g.translate(x, y, z); return colorize(g, c, c2);

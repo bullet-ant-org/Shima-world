@@ -1,6 +1,8 @@
 /** Shared geometry + material library. Material budget: 11 materials for the whole world + character (crystal and lava are the only emissive additions, both for island identity). */
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { vec3 } from 'three/tsl';
+import { detailNode, surfaceTexture, terrainTexture, waterNode, waterTexture } from './textures';
 
 export function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   const c = new THREE.Color(hex);
@@ -8,6 +10,7 @@ export function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometr
   const a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  g.setAttribute('kind', new THREE.BufferAttribute(new Float32Array(n), 1)); // texture channel (0 plaster / grass by default)
   return g;
 }
 export function box(w: number, h: number, d: number, x: number, y: number, z: number, hex: number): THREE.BufferGeometry {
@@ -17,31 +20,42 @@ export function cyl(rt: number, rb: number, h: number, seg: number, x: number, y
   const g = new THREE.CylinderGeometry(rt, rb, h, seg); g.translate(x, y, z); return paint(g, hex);
 }
 
+/** Painted facade atlas for far buildings: 8x8 cells of plaster with framed, reflective, curtained windows; separate emissive map for lit panes. */
 function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
-  const S = 256, N = 8, cell = S / N;
+  const S = 512, N = 8, cell = S / N;
   const a = document.createElement('canvas'); a.width = a.height = S;
   const b = document.createElement('canvas'); b.width = b.height = S;
   const ca = a.getContext('2d')!, cb = b.getContext('2d')!;
-  ca.fillStyle = '#e9e4da'; ca.fillRect(0, 0, S, S);
-  cb.fillStyle = '#000'; cb.fillRect(0, 0, S, S);
-  const lit = ['#ffd9a0', '#ffe6b8', '#ffd9a0', '#9fdfff'];
   let seed = 12345;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) | 0) >>> 0) / 4294967295;
+  // plaster base: warm off-white with soft blotches, fine grain, floor-line bands and faint weathering streaks
+  ca.fillStyle = '#e8e3d9'; ca.fillRect(0, 0, S, S);
+  for (let i = 0; i < 700; i++) { ca.fillStyle = `rgba(${150 + rnd() * 90 | 0},${145 + rnd() * 85 | 0},${135 + rnd() * 80 | 0},${0.05 + rnd() * 0.07})`; ca.beginPath(); ca.ellipse(rnd() * S, rnd() * S, 6 + rnd() * 30, 4 + rnd() * 20, rnd() * 3, 0, 7); ca.fill(); }
+  for (let i = 0; i < 5000; i++) { ca.fillStyle = `rgba(90,85,80,${rnd() * 0.08})`; ca.fillRect(rnd() * S, rnd() * S, 1, 1 + rnd() * 2); }
+  cb.fillStyle = '#000'; cb.fillRect(0, 0, S, S);
+  const lit = ['#ffe0a8', '#ffd69a', '#fff0c8', '#ffcf8a', '#bfe6ff'];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = i * cell + 6, y = j * cell + 7, w = cell - 12, h = cell - 14;
-    if (rnd() < 0.55) {
-      const col = lit[Math.floor(rnd() * lit.length)];
-      ca.fillStyle = col; ca.fillRect(x, y, w, h);
-      cb.fillStyle = col; cb.fillRect(x, y, w, h);
-    } else { ca.fillStyle = '#34506a'; ca.fillRect(x, y, w, h); }
+    const x = i * cell + 11, y = j * cell + 11, w = cell - 22, h = cell - 24;
+    ca.fillStyle = 'rgba(70,60,55,0.18)'; ca.fillRect(i * cell, j * cell + cell - 4, cell, 4);                 // floor band shadow
+    ca.fillStyle = '#f7f4ec'; ca.fillRect(x - 5, y - 5, w + 10, h + 10);                                          // frame
+    ca.fillStyle = 'rgba(60,50,45,0.35)'; ca.fillRect(x - 7, y + h + 4, w + 14, 4);                              // sill + shadow
+    const isLit = rnd() < 0.5;
+    const g = ca.createLinearGradient(x, y, x + w, y + h);                                                        // glass: sky reflection
+    g.addColorStop(0, '#7fb2d6'); g.addColorStop(0.55, '#3b6a92'); g.addColorStop(1, '#1f3a5c');
+    ca.fillStyle = isLit ? '#caa56a' : g; ca.fillRect(x, y, w, h);
+    if (!isLit) { ca.fillStyle = 'rgba(255,255,255,0.28)'; ca.beginPath(); ca.moveTo(x + 6, y + h); ca.lineTo(x + w * 0.5, y); ca.lineTo(x + w * 0.7, y); ca.lineTo(x + 22, y + h); ca.fill(); }
+    const kind = rnd();
+    if (kind < 0.22) { ca.fillStyle = 'rgba(235,225,205,0.8)'; ca.fillRect(x, y, w, h * (0.25 + rnd() * 0.4)); }   // blinds / curtain
+    ca.fillStyle = '#d8d2c6'; ca.fillRect(x + w / 2 - 1, y, 2, h); ca.fillRect(x, y + h * 0.45, w, 2);          // mullions
+    if (kind > 0.88) { ca.fillStyle = '#8a9099'; ca.fillRect(x + 4, y + h + 7, 18, 11); ca.fillStyle = '#6a7079'; ca.fillRect(x + 4, y + h + 7, 18, 3); } // AC unit
+    if (isLit) { const e = cb.createLinearGradient(x, y, x, y + h); e.addColorStop(0, lit[Math.floor(rnd() * lit.length)]); e.addColorStop(1, '#ff9a4a'); cb.fillStyle = e; cb.fillRect(x, y, w, h); cb.fillStyle = '#000'; cb.fillRect(x + w / 2 - 1, y, 2, h); cb.fillRect(x, y + h * 0.45, w, 2); }
   }
-  const mk = (c: HTMLCanvasElement, srgb: boolean) => {
+  const mk = (c: HTMLCanvasElement) => {
     const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
     return t;
   };
-  return { map: mk(a, true), emissive: mk(b, true) };
+  return { map: mk(a), emissive: mk(b) };
 }
 
 /** 3-band cel ramp: shade / mid / light. Nearest filtering gives hard anime bands instead of smooth gradients. */
@@ -54,17 +68,24 @@ function toonRamp(): THREE.DataTexture {
 export class Assets {
   readonly ramp = toonRamp();
   // materials
-  readonly terrain = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
-  readonly props = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
+  private surfaceTex = surfaceTexture();
+  private terrainTex = terrainTexture();
+  /** painted ground: vertex colour x painted grass/sand/rock/snow detail (channel per vertex `kind`) */
+  readonly terrain = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp }); m.colorNode = detailNode(this.terrainTex, 1 / 17, 1 / 2.7); return m; })();
+  /** painted architecture/props: vertex colour x plaster / wood grain / roof tile / stone masonry detail (per-vertex `kind`) */
+  readonly props = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp }); m.colorNode = detailNode(this.surfaceTex, 1 / 3.4, 1 / 0.85); return m; })();
+  /** moving things (hero, cars): toon vertex colours with no world-space texture, so nothing swims */
+  readonly rig = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });
   readonly glow = new THREE.MeshBasicMaterial({ color: 0xffffff });
   /** far-LOD facade: shared window atlas tinted per building by vertex colour */
   readonly building: THREE.MeshToonMaterial;
   /** all paved ground (gravel roads, sidewalks, flagstone paths) */
-  readonly ground = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  readonly ground = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); m.colorNode = detailNode(this.terrainTex, 1 / 6.5, 1 / 1.4); return m; })();
   /** unlit vertex-colour emissives: lit windows, neon, lantern flames, beacons */
   readonly lights = new THREE.MeshBasicMaterial({ vertexColors: true });
   readonly road = new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.7 });
-  readonly sea = new THREE.MeshStandardMaterial({ color: 0x0b3a5a, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.88 });
+  /** animated rippling sea: two drifting painted ripple layers + glints */
+  readonly sea = (() => { const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.3, metalness: 0.05, transparent: true, opacity: 0.9 }); m.colorNode = waterNode(waterTexture()).mul(vec3(0.07, 0.4, 0.58)); return m; })();
   readonly agents = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: this.ramp });
   /** people: toon vertex colours where white = tintable clothing */
   readonly folk = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: this.ramp });

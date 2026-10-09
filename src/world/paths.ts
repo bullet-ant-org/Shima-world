@@ -14,7 +14,7 @@ export interface Path {
   ys?: Float32Array;
 }
 export interface Seg { path: Path; i: number }
-export interface MeshOut { pos: number[]; nor: number[]; col: number[]; idx: number[]; lights?: MeshOut }
+export interface MeshOut { pos: number[]; nor: number[]; col: number[]; idx: number[]; kind?: number[]; lights?: MeshOut }
 
 const SAMPLE = 5; // metres between samples
 
@@ -132,12 +132,16 @@ export class PathNet {
   buildChunkMesh(cx: number, cz: number): MeshOut | null {
     const segs = this.segsIn(cx, cz);
     if (!segs.length) return null;
-    const o: MeshOut = { pos: [], nor: [], col: [], idx: [] };
+    const o: MeshOut = { pos: [], nor: [], col: [], idx: [], kind: [] };
     for (const s of segs) {
       const p = s.path, i = s.i;
-      if (p.kind === 'sky') { this.skySeg(o, p, i); continue; }
+      const v0 = o.pos.length / 3;
+      // texture channel per vertex: flagstone -> rock, gravel road / runway -> gravel, sky deck -> rock
+      const tk = p.kind === 'stone' || p.kind === 'sky' ? 2 : 1;
+      if (p.kind === 'sky') { this.skySeg(o, p, i); for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk); continue; }
       if (heightAt((p.x[i] + p.x[i + 1]) / 2, (p.z[i] + p.z[i + 1]) / 2) < 0.8) continue; // no paving over water / river beds
       if (p.kind === 'stone') this.stoneSeg(o, p, i); else if (p.kind === 'runway') this.runwaySeg(o, p, i); else this.roadSeg(o, p, i);
+      for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk);
     }
     return o.idx.length || o.lights?.idx.length ? o : null;
   }

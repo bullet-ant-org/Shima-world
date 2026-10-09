@@ -98,14 +98,14 @@ export class World {
     const c = new THREE.Color();
     for (const isl of ISLANDS) {
       const n = isl.id === 'islet' ? 40 : 120, x0 = isl.cx - isl.rx * 1.08, z0 = isl.cz - isl.rz * 1.08, sx = (isl.rx * 2.16) / n, sz = (isl.rz * 2.16) / n;
-      const pos = new Float32Array((n + 1) * (n + 1) * 3), col = new Float32Array((n + 1) * (n + 1) * 3), nor = new Float32Array((n + 1) * (n + 1) * 3);
+      const pos = new Float32Array((n + 1) * (n + 1) * 3), col = new Float32Array((n + 1) * (n + 1) * 3), nor = new Float32Array((n + 1) * (n + 1) * 3), knd = new Float32Array((n + 1) * (n + 1));
       for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
         const x = x0 + i * sx, z = z0 + j * sz, y = heightAt(x, z), v = (j * (n + 1) + i) * 3;
         const gx = heightAt(x - sx, z) - heightAt(x + sx, z), gz = heightAt(x, z - sz) - heightAt(x, z + sz);
         const l = Math.hypot(gx, 2 * sx, gz);
         pos[v] = x; pos[v + 1] = y - 5; pos[v + 2] = z; nor[v] = gx / l; nor[v + 1] = (2 * sx) / l; nor[v + 2] = gz / l;
         this.terrainColor(x, z, y, Math.hypot(gx, gz) / (2 * sx), c);
-        col[v] = c.r; col[v + 1] = c.g; col[v + 2] = c.b;
+        col[v] = c.r; col[v + 1] = c.g; col[v + 2] = c.b; knd[j * (n + 1) + i] = this.terrainKind(x, z, y, Math.hypot(gx, gz) / (2 * sx));
       }
       const idx: number[] = [];
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -114,7 +114,7 @@ export class World {
         idx.push(a, d, b, b, d, e);
       }
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('kind', new THREE.BufferAttribute(knd, 1));
       g.setIndex(idx); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, this.assets.terrain); m.matrixAutoUpdate = false;
       this.group.add(m);
@@ -400,6 +400,22 @@ export class World {
   }
 
   // ---- chunk contents ----
+  /** painted-texture channel for the ground: 0 grass, 1 sand/gravel/ash, 2 rock, 3 snow (adjacent channels blend naturally) */
+  private terrainKind(x: number, z: number, y: number, grad: number): number {
+    const id: IslandId = islandAt(x, z)?.id ?? 'valley';
+    const cliff = sstep(0.7, 1.25, grad);
+    let k = 0;
+    switch (id) {
+      case 'valley': k = y < 2.6 ? 1 : y > 90 ? 2 * sstep(90, 220, y) : 0; break;
+      case 'city': k = 1; break;
+      case 'god': k = 2 - 2 * sstep(0.55, 0.85, noise2(x * 0.012 + 3, z * 0.012)) * 0.85; break; // ancient stone, mossy patches
+      case 'ember': k = 1; break;
+      case 'snow': k = y < 2.2 ? 1 : 3 - sstep(0.55, 0.72, noise2(x * 0.03, z * 0.03)) * sstep(60, 160, y) * 0.9; break;
+      default: k = y < 2.4 ? 1 : 0;
+    }
+    return k + (2 - k) * cliff;
+  }
+
   private terrainColor(x: number, z: number, y: number, grad: number, out: THREE.Color): void {
     const id: IslandId = islandAt(x, z)?.id ?? 'valley';
     const n = noise2(x * 0.05, z * 0.05), cliff = sstep(0.75, 1.3, grad);
@@ -451,7 +467,7 @@ export class World {
   private buildTerrain(cx: number, cz: number, s: number): THREE.BufferGeometry {
     const n = s + 1, step = CHUNK / s, ox = cx * CHUNK, oz = cz * CHUNK;
     const gridV = n * n, V = gridV + 4 * n;
-    const pos = new Float32Array(V * 3), nor = new Float32Array(V * 3), col = new Float32Array(V * 3);
+    const pos = new Float32Array(V * 3), nor = new Float32Array(V * 3), col = new Float32Array(V * 3), knd = new Float32Array(V);
     const c = new THREE.Color();
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = ox + i * step, z = oz + j * step, y = heightAt(x, z), v = (j * n + i) * 3;
@@ -461,7 +477,7 @@ export class World {
       const l = Math.hypot(nx, 2, nz); nx /= l; nz /= l;
       nor[v] = nx; nor[v + 1] = 2 / l; nor[v + 2] = nz;
       this.terrainColor(x, z, y, grad, c);
-      col[v] = c.r; col[v + 1] = c.g; col[v + 2] = c.b;
+      col[v] = c.r; col[v + 1] = c.g; col[v + 2] = c.b; knd[j * n + i] = this.terrainKind(x, z, y, grad);
     }
     const idx: number[] = [];
     for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) {
@@ -477,7 +493,7 @@ export class World {
         const src = e[k] * 3, dst = (base + k) * 3;
         pos[dst] = pos[src]; pos[dst + 1] = pos[src + 1] - 24; pos[dst + 2] = pos[src + 2];
         nor[dst] = nor[src]; nor[dst + 1] = nor[src + 1]; nor[dst + 2] = nor[src + 2];
-        col[dst] = col[src]; col[dst + 1] = col[src + 1]; col[dst + 2] = col[src + 2];
+        col[dst] = col[src]; col[dst + 1] = col[src + 1]; col[dst + 2] = col[src + 2]; knd[base + k] = knd[e[k]];
       }
       for (let k = 0; k < n - 1; k++) {
         const a = e[k], b = e[k + 1], c2 = base + k, d = base + k + 1;
@@ -488,6 +504,7 @@ export class World {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('kind', new THREE.BufferAttribute(knd, 1));
     g.setIndex(idx);
     return g;
   }
@@ -512,6 +529,7 @@ export class World {
       g.setAttribute('position', new THREE.Float32BufferAttribute(pm.pos, 3));
       g.setAttribute('normal', new THREE.Float32BufferAttribute(pm.nor, 3));
       g.setAttribute('color', new THREE.Float32BufferAttribute(pm.col, 3));
+      g.setAttribute('kind', new THREE.Float32BufferAttribute(pm.kind!, 1));
       g.setIndex(pm.idx);
       const m = new THREE.Mesh(g, A.ground); m.userData.ownGeo = true; m.receiveShadow = ring === 0; m.matrixAutoUpdate = false;
       grp.add(m);

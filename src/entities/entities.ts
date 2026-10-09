@@ -238,7 +238,7 @@ export class CarFleet {
     this.n = n; this.models = models; this.per = Math.ceil(n / models.length);
     models.forEach((model, mi) => {
       const g = carGeo(model);
-      const body = new THREE.InstancedMesh(g.lit, assets.props, this.per);
+      const body = new THREE.InstancedMesh(g.lit, assets.rig, this.per);
       body.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.per * 3), 3);
       for (let k = 0; k < this.per; k++) {
         const c = model === 'taxi' ? TAXI : new THREE.Color(palette[(k * 7 + mi * 3) % palette.length]);

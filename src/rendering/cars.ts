@@ -178,7 +178,7 @@ export function bakeCar(lit: MB, lights: MB, model: CarModel, x: number, z: numb
       const nx = src.N[i], nz = src.N[i + 2];
       mb.N.push(nx * co + nz * si, src.N[i + 1], -nx * si + nz * co);
       const white = tint && src.C[i] > 0.97 && src.C[i + 1] > 0.97;
-      mb.C.push(white ? paint[0] : src.C[i], white ? paint[1] : src.C[i + 1], white ? paint[2] : src.C[i + 2]);
+      mb.C.push(white ? paint[0] : src.C[i], white ? paint[1] : src.C[i + 1], white ? paint[2] : src.C[i + 2]); mb.K.push(0);
     }
     for (const k of src.I) mb.I.push(base + k);
   };

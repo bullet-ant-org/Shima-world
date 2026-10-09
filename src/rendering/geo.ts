@@ -21,8 +21,24 @@ const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** Mesh builder: flat-shaded quads/tris with outward-facing winding resolved from an interior hint point. */
+/**
+ * Texture channel for a vertex colour (shading-invariant): 1 wood (browns), 2 roof tile (slate / moss green), 3 stone (mid greys),
+ * 0 plaster (everything else). The material paints grain / tiles / masonry from this.
+ */
+const WOODS = [0x6b4630, 0x4a3020, 0x5a3b28, 0x8a6a4a, 0x2f1e12, 0x7a5a3a, 0x3a2418, 0x5a4030, 0x8a6a4a, 0x2a1a10].map((h) => norm(hex(h)));
+const TILES = [0x3a4258, 0x4c566f, 0x5a6b48, 0xe8f0f8].map((h) => norm(hex(h)));
+function norm(c: V3): V3 { const m = Math.max(c[0], c[1], c[2], 1e-4); return [c[0] / m, c[1] / m, c[2] / m]; }
+function kindOf(c: V3): number {
+  const mx = Math.max(c[0], c[1], c[2]), mn = Math.min(c[0], c[1], c[2]), n = norm(c), lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+  const near = (list: V3[], t: number) => list.some((q) => Math.abs(q[0] - n[0]) + Math.abs(q[1] - n[1]) + Math.abs(q[2] - n[2]) < t);
+  if (mx - mn < 0.09 && lum > 0.2 && lum < 0.66) return 3;           // grey -> stone
+  if (lum < 0.42 && near(TILES, 0.16)) return 2;                        // slate / moss roof
+  if (near(WOODS, 0.1) && lum < 0.5) return 1;                          // brown timber
+  return 0;
+}
+
 export class MB {
-  P: number[] = []; N: number[] = []; C: number[] = []; U: number[] = []; I: number[] = [];
+  P: number[] = []; N: number[] = []; C: number[] = []; U: number[] = []; I: number[] = []; K: number[] = [];
   constructor(private withUV = false) {}
 
   quad(a: V3, b: V3, c: V3, d: V3, col: V3, hint?: V3, uv?: number[]): void {
@@ -34,7 +50,7 @@ export class MB {
     }
     const l = Math.hypot(n[0], n[1], n[2]) || 1, base = this.P.length / 3;
     for (let i = 0; i < 4; i++) {
-      this.P.push(q[i][0], q[i][1], q[i][2]); this.N.push(n[0] / l, n[1] / l, n[2] / l); this.C.push(col[0], col[1], col[2]);
+      this.P.push(q[i][0], q[i][1], q[i][2]); this.N.push(n[0] / l, n[1] / l, n[2] / l); this.C.push(col[0], col[1], col[2]); this.K.push(kindOf(col));
       if (this.withUV) this.U.push(u ? u[i * 2] : 0, u ? u[i * 2 + 1] : 0);
     }
     this.I.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -43,7 +59,7 @@ export class MB {
     let q: V3[] = [a, b, c], n = cross(sub(b, a), sub(c, a));
     if (hint) { const m: V3 = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3]; if (dot(n, sub(m, hint)) < 0) { q = [a, c, b]; n = [-n[0], -n[1], -n[2]]; } }
     const l = Math.hypot(n[0], n[1], n[2]) || 1, base = this.P.length / 3;
-    for (const p of q) { this.P.push(p[0], p[1], p[2]); this.N.push(n[0] / l, n[1] / l, n[2] / l); this.C.push(col[0], col[1], col[2]); if (this.withUV) this.U.push(0, 0); }
+    for (const p of q) { this.P.push(p[0], p[1], p[2]); this.N.push(n[0] / l, n[1] / l, n[2] / l); this.C.push(col[0], col[1], col[2]); this.K.push(kindOf(col)); if (this.withUV) this.U.push(0, 0); }
     this.I.push(base, base + 1, base + 2);
   }
   /** oriented box; U = along (x,z unit), Nn = outward normal (x,z unit); mask: 1 front, 2 back, 4 +u, 8 -u, 16 top, 32 bottom */
@@ -97,6 +113,7 @@ export class MB {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.P, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.N, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.C, 3));
+    g.setAttribute('kind', new THREE.Float32BufferAttribute(this.K, 1));
     if (this.withUV) g.setAttribute('uv', new THREE.Float32BufferAttribute(this.U, 2));
     g.setIndex(this.I);
     g.computeBoundingSphere();
@@ -675,7 +692,7 @@ export function greatTreeGeo(): Pair {
     const g = new THREE.SphereGeometry(r, 12, 9); g.scale(1, 0.78, 1); g.translate(x, y, z);
     const col = new Float32Array(g.attributes.position.count * 3), cc = new THREE.Color(c);
     for (let i = 0; i < col.length; i += 3) { col[i] = cc.r; col[i + 1] = cc.g; col[i + 2] = cc.b; }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.deleteAttribute('uv'); geos.push(g.index ? g.toNonIndexed() : g);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('kind', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1)); g.deleteAttribute('uv'); geos.push(g.index ? g.toNonIndexed() : g);
   };
   for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.2832, r = 6.5 + (i % 3) * 2.2; blob(Math.cos(a) * r, 15 + (i % 4) * 2.2, Math.sin(a) * r, 5.2 - (i % 3) * 0.5, pink[i & 3]); }
   for (let i = 0; i < 5; i++) { const a = (i / 5) * 6.2832 + 0.5; blob(Math.cos(a) * 3, 21 + (i % 2) * 2, Math.sin(a) * 3, 6.2, pink[(i + 1) & 3]); }
