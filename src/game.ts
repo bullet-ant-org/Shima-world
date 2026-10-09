@@ -11,6 +11,7 @@ import { Network } from './network/network';
 import { DynamicResolution, type DeviceProfile } from './core/device';
 import { ISLANDS, heightAt, islandAt, sstep, zoneAt, type IslandId } from './world/terrain';
 import { kvSet } from './core/store';
+import type { CharacterSpec } from './entities/character';
 
 export interface SaveData { x: number; z: number; time: number }
 
@@ -79,12 +80,12 @@ export class Game {
     this.shadowsOn = profile.q.shadows;
   }
 
-  async init(save?: SaveData): Promise<void> {
+  async init(save?: SaveData, spec?: CharacterSpec): Promise<void> {
     this.gr = await GameRenderer.create(this.canvas, this.profile.webgpu, this.profile.dpr);
     this.gr.setScale(this.dyn.scale);
     const q = this.profile.q;
 
-    this.world = new World(this.assets, { outlines: q.outlines, detail: q.detailWindows });
+    this.world = new World(this.assets, { outlines: q.outlines === 'all', detail: q.detailWindows });
     this.scene.add(this.world.group);
     this.sky = new Sky(this.assets.ramp);
     this.scene.add(this.sky.group);
@@ -93,13 +94,13 @@ export class Game {
 
     // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
     const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
-    this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn);
+    this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn, spec, q.outlines !== 'off');
     if (save) this.gameTime = save.time;
     this.scene.add(this.player.group);
 
-    this.npc = new NpcSystem(q.npc, this.assets);
-    this.traffic = new TrafficSystem(q.traffic, this.assets);
-    this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky']);
+    this.npc = new NpcSystem(q.npc, this.assets, q.outlines === 'all');
+    this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
+    this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
     this.scene.add(this.npc.mesh, this.traffic.group, this.skyTraffic.group, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
 

@@ -2,6 +2,7 @@
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
 import { Hero, type Mode } from './hero';
+import { defaultSpec, normalize, type CharacterSpec } from './character';
 import type { Input } from '../core/input';
 import { heightAt, mulberry32 } from '../world/terrain';
 import { NET, blockTop, blocked, cityPaths, inCity } from '../world/layout';
@@ -27,8 +28,8 @@ export class Player {
   /** one-shot / continuous FX requests read by the game */
   sliding = false; impact = 0;
 
-  constructor(assets: Assets, spawn: { x: number; z: number }) {
-    this.hero = new Hero(assets);
+  constructor(assets: Assets, spawn: { x: number; z: number }, spec?: CharacterSpec, ink = true) {
+    this.hero = new Hero(assets, spec ? normalize(spec) : defaultSpec(), ink);
     this.group = this.hero.root;
     this.x = spawn.x; this.z = spawn.z;
     this.y = heightAt(this.x, this.z);
@@ -170,11 +171,10 @@ export class NpcSystem {
   private frame = 0;
   counts = { full: 0, reduced: 0, recycled: 0 };
 
-  constructor(n: number, assets: Assets) {
+  constructor(n: number, assets: Assets, ink = false) {
     this.n = n;
     this.mesh = new THREE.InstancedMesh(assets.person, assets.folk, n);
-    const ol = new THREE.InstancedMesh(hullGeo(assets.person), outlineMat(0.03), n);
-    ol.instanceMatrix = this.mesh.instanceMatrix; ol.frustumCulled = false; this.mesh.add(ol);
+    if (ink) { const ol = new THREE.InstancedMesh(hullGeo(assets.person), outlineMat(0.012), n); ol.instanceMatrix = this.mesh.instanceMatrix; ol.frustumCulled = false; this.mesh.add(ol); }
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;
@@ -234,7 +234,7 @@ export class NpcSystem {
 export class CarFleet {
   readonly group = new THREE.Group();
   private lit: THREE.InstancedMesh[] = []; private n: number; private models: CarModel[]; private per: number;
-  constructor(n: number, models: CarModel[], assets: Assets, palette: number[]) {
+  constructor(n: number, models: CarModel[], assets: Assets, palette: number[], ink = false) {
     this.n = n; this.models = models; this.per = Math.ceil(n / models.length);
     models.forEach((model, mi) => {
       const g = carGeo(model);
@@ -247,9 +247,8 @@ export class CarFleet {
       body.frustumCulled = false; body.castShadow = true;
       const lights = new THREE.InstancedMesh(g.lights, assets.lights, this.per);
       lights.instanceMatrix = body.instanceMatrix; lights.frustumCulled = false;
-      const outline = new THREE.InstancedMesh(hullGeo(g.lit), outlineMat(0.045), this.per);
-      outline.instanceMatrix = body.instanceMatrix; outline.frustumCulled = false;
-      this.group.add(body, lights, outline);
+      this.group.add(body, lights);
+      if (ink) { const outline = new THREE.InstancedMesh(hullGeo(g.lit), outlineMat(0.02), this.per); outline.instanceMatrix = body.instanceMatrix; outline.frustumCulled = false; this.group.add(outline); }
       this.lit.push(body);
     });
   }
@@ -278,9 +277,9 @@ export class TrafficSystem {
   private frame = 0;
   counts = { near: 0, mid: 0 };
 
-  constructor(n: number, assets: Assets, private kinds: string[] = ['avenue', 'street'], private lift = 3.2) {
+  constructor(n: number, assets: Assets, private kinds: string[] = ['avenue', 'street'], private lift = 3.2, ink = false) {
     this.n = n;
-    this.fleet = new CarFleet(n, kinds.includes('sky') ? ['hover'] : CAR_MODELS, assets, CAR_PALETTE);
+    this.fleet = new CarFleet(n, kinds.includes('sky') ? ['hover'] : CAR_MODELS, assets, CAR_PALETTE, ink);
     this.group = this.fleet.group;
     this.path = new Array(n).fill(null); this.s = new Float32Array(n); this.idx = new Int32Array(n);
     this.dir = new Float32Array(n); this.spd = new Float32Array(n); this.cur = new Float32Array(n); this.active = new Uint8Array(n);

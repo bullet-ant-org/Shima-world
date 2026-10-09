@@ -3,9 +3,11 @@ import { kvGet, kvSet } from './core/store';
 import { applyUpdate, checkForUpdate, isInstalledOffline, isStandalone, lockLandscape, promptInstall, registerSW, storageEstimate } from './pwa/pwa';
 import { Game, type SaveData } from './game';
 import { ISLANDS } from './world/terrain';
+import { Builder } from './ui/builder';
+import { defaultSpec, normalize, type CharacterSpec } from './entities/character';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const screens = ['gate', 'menu', 'loading'];
+const screens = ['gate', 'menu', 'loading', 'builder'];
 function show(id: string | null): void { screens.forEach((s) => $(s).classList.toggle('show', s === id)); }
 
 const dev = import.meta.env.DEV || location.search.includes('dev=1');
@@ -42,7 +44,8 @@ async function startGame(): Promise<void> {
   game = new Game(canvas, profile);
   if (dev) (window as unknown as { __game: Game }).__game = game;
   step(60, 'Building world…');
-  await game.init(save);
+  const spec = normalize(await kvGet<CharacterSpec>('character').catch(() => null));
+  await game.init(save, spec);
   step(100, 'Done');
   show(null);
   $('topbtns').style.display = 'flex';
@@ -92,6 +95,22 @@ async function boot(): Promise<void> {
     $('menu-info').textContent = 'Checking for update…';
     const has = await checkForUpdate();
     if (has) setUpdateReady(); else $('menu-info').textContent = 'You have the latest version.';
+  };
+  const INK = ['hero', 'all', 'off'] as const;
+  const savedInk = await kvGet<string>('outlines');
+  if (savedInk && (INK as readonly string[]).includes(savedInk)) profile.q.outlines = savedInk as typeof INK[number];
+  const inkLabel = () => { $('ink-btn').textContent = 'OUTLINES: ' + profile.q.outlines.toUpperCase(); };
+  inkLabel();
+  $('ink-btn').onclick = () => {
+    profile.q.outlines = INK[(INK.indexOf(profile.q.outlines) + 1) % INK.length];
+    void kvSet('outlines', profile.q.outlines); inkLabel();
+    $('menu-info').textContent = 'Outline change applies next time the world loads.';
+  };
+  $('char-btn').onclick = async () => {
+    const cur = normalize(await kvGet<CharacterSpec>('character').catch(() => null));
+    show('builder');
+    const b = new Builder($('builder'), cur ?? defaultSpec(), (s) => { void kvSet('character', s); show('menu'); });
+    await b.open();
   };
   $('update-btn').onclick = () => void doUpdate();
   const travel = $('travel');

@@ -79,7 +79,7 @@ export class World {
   private pillars: THREE.LOD[] = [];
   stats = { loaded: 0, ring: [0, 0, 0], builtThisFrame: 0, pools: 0, instances: 0 };
 
-  constructor(private assets: Assets, opts: { outlines: boolean; detail: boolean } = { outlines: true, detail: true }) {
+  constructor(private assets: Assets, opts: { outlines: boolean; detail: boolean } = { outlines: false, detail: true }) {
     this.outlines = opts.outlines; this.nearDetail = opts.detail;
     const seaGeo = new THREE.PlaneGeometry(90000, 90000); seaGeo.rotateX(-Math.PI / 2);
     this.sea = new THREE.Mesh(seaGeo, assets.sea);
@@ -165,7 +165,7 @@ export class World {
         if (pair.lights) bg.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
       }
       const inked = this.outlines && ['house0', 'house1', 'house2', 'cabin0', 'cabin1', 'cabin2', 'temple', 'shrine', 'pagoda', 'pagodaIce', 'sanmon', 'torii', 'toriiIce', 'toroBig', 'terminal', 'airTower', 'hangar', 'plane0', 'plane1', 'plane2', 'greatTree'].includes(kind);
-      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, inked ? { geo: pair.lit, width: kind === 'greatTree' ? 0.3 : 0.14 } : null);
+      bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, inked ? { geo: pair.lit, width: kind === 'greatTree' ? 0.12 : 0.05 } : null);
       if (pair.lights) bg.commit(this.pools, pair.lights, A.lights, false, this.resident);
     }
   }
@@ -550,7 +550,7 @@ export class World {
         for (const b of buildingsNear(ox + i * 64 + 1, oz + j * 64 + 1)) {
           if (!hasBuildingDetail(b.spec)) { if (built >= 1) { this.missed++; continue; } built++; }
           const g = buildingGeo(b.spec, true), one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
-          one.commit(this.pools, g.lit, A.props, true, inst, this.outlines ? { geo: buildingGeo(b.spec, false).lit, width: 0.32 } : null);
+          one.commit(this.pools, g.lit, A.props, true, inst, this.outlines ? { geo: buildingGeo(b.spec, false).lit, width: 0.12 } : null);
           if (g.lights) { const l = new Batch(); l.add(b.x, 3, b.z, b.ry, 1, 1, 1); put(l, g.lights, A.lights); }
         }
       }
