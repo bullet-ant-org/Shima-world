@@ -347,6 +347,123 @@ function islets(): void {
 }
 
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Countryside: farming hamlets (houses, fields, barns, haystacks, scarecrows, pastures) linked to the villages by stone
+// lanes, and roadside stalls along the paths. Pastures are where horses graze.
+// ---------------------------------------------------------------------------------------------------------------------
+export const PASTURES: { x: number; z: number; r: number }[] = [];
+const occ = new Set<string>();
+const OCC = 10;
+function claim(x: number, z: number, r: number): boolean {
+  const c0 = Math.floor((x - r) / OCC), c1 = Math.floor((x + r) / OCC), d0 = Math.floor((z - r) / OCC), d1 = Math.floor((z + r) / OCC);
+  for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) if (occ.has(i + ',' + j)) return false;
+  for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) occ.add(i + ',' + j);
+  return true;
+}
+/** flat enough for a footprint of radius r */
+function flat(x: number, z: number, r: number, minH = 3): boolean {
+  const h = heightAt(x, z); if (h < minH) return false;
+  let lo = h, hi = h;
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * TAU, q = heightAt(x + Math.cos(a) * r, z + Math.sin(a) * r); if (q < minH) return false; lo = Math.min(lo, q); hi = Math.max(hi, q); }
+  return hi - lo < r * 0.42;
+}
+const awayFromPaths = (x: number, z: number, d: number) => { const n = NET.nearest(x, z, d); return !n; };
+
+function stallsAlong(p: Path, every: number, chance: number, rng: () => number): void {
+  along(p, every, p.width / 2 + 3.2, 0.05, 0.95, (x, z, nx, nz) => {
+    if (rng() > chance || !flat(x, z, 3, 1.5) || !claim(x, z, 4)) return;
+    prop('stall' + Math.floor(rng() * 4), x, z, face(-nx, -nz), 1);
+  });
+}
+
+function farmPlot(x: number, z: number, ry: number, rng: () => number): boolean {
+  if (!flat(x, z, 12) || Math.abs(x - riverX(z)) < 45 || !awayFromPaths(x, z, 14) || !claim(x, z, 13)) return false;
+  prop('field' + Math.floor(rng() * 4), x, z, ry, 1);
+  const c = Math.cos(ry), s = Math.sin(ry);
+  // fence the long sides, leave the ends open
+  for (const side of [-1, 1]) for (const k of [-1, 0, 1]) {
+    const lx = side * 8.6, lz = k * 7.4;
+    prop('fence', x + lx * c + lz * s, z - lx * s + lz * c, ry + Math.PI / 2, 1);
+  }
+  if (rng() < 0.4) prop('scarecrow', x + 3 * c, z - 3 * s, ry + rng(), 1);
+  return true;
+}
+
+function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: number } | null, rng: () => number, snow = false): void {
+  if (link) {
+    const mx = (cx + link.x) / 2 + (rng() - 0.5) * 90, mz = (cz + link.z) / 2 + (rng() - 0.5) * 90;
+    const lane = stoneAt([[link.x, link.z], [mx, mz], [cx, cz]], 5, isl);
+    stallsAlong(lane, 70, 0.35, rng);
+  }
+  claim(cx, cz, 8);
+  prop('shrine', cx, cz, rng() * TAU, 0.7);
+  const nh = 5 + Math.floor(rng() * 4);
+  for (let i = 0; i < nh; i++) {
+    const a = (i / nh) * TAU + rng() * 0.4, r = 26 + rng() * 14, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    if (!flat(x, z, 7) || !claim(x, z, 7)) continue;
+    prop((snow ? 'cabin' : 'house') + Math.floor(rng() * 3), x, z, face(cx - x, cz - z), 0.9 + rng() * 0.2);
+  }
+  for (let i = 0; i < 2; i++) { const a = rng() * TAU, x = cx + Math.cos(a) * 12, z = cz + Math.sin(a) * 12; if (flat(x, z, 3) && claim(x, z, 3.5)) prop('stall' + Math.floor(rng() * 4), x, z, face(cx - x, cz - z), 1); }
+  if (snow) return;
+  // barn + haystacks
+  for (let tries = 0; tries < 6; tries++) {
+    const a = rng() * TAU, x = cx + Math.cos(a) * 62, z = cz + Math.sin(a) * 62;
+    if (!flat(x, z, 10) || !claim(x, z, 11)) continue;
+    prop('barn', x, z, face(cx - x, cz - z), 1);
+    for (let k = 0; k < 3; k++) { const hx = x + Math.cos(a + 0.6 + k * 0.35) * 16, hz = z + Math.sin(a + 0.6 + k * 0.35) * 16; if (flat(hx, hz, 2) && claim(hx, hz, 2)) prop('haystack', hx, hz, rng() * TAU, 0.9 + rng() * 0.3); }
+    break;
+  }
+  // fields in a loose ring outside the houses
+  const nf = 5 + Math.floor(rng() * 5);
+  for (let i = 0; i < nf * 2 && i < 16; i++) {
+    const a = rng() * TAU, r = 80 + rng() * 70, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    farmPlot(x, z, a + (rng() < 0.5 ? 0 : Math.PI / 2), rng);
+  }
+  // fenced pasture for horses
+  for (let tries = 0; tries < 8; tries++) {
+    const a = rng() * TAU, r = 95 + rng() * 40, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    if (!flat(x, z, 16) || !claim(x, z, 18)) continue;
+    const R = 16, n = 9;
+    for (let k = 0; k < n; k++) { if (k === 0) continue; const b = (k / n) * TAU + a, q = (b + ((1 / n) * TAU) / 2); prop('fence', x + Math.cos(q) * R, z + Math.sin(q) * R, -q - Math.PI / 2, 1); }
+    PASTURES.push({ x, z, r: R - 4 });
+    break;
+  }
+}
+
+function countryside(): void {
+  const rng = mulberry32(2024);
+  const v = island('valley'), VC = { x: v.cx + 480, z: v.cz + 50 };
+  // claim what the villages already use so farms don't land on houses
+  for (const k of ['house0', 'house1', 'house2', 'cabin0', 'cabin1', 'cabin2', 'temple', 'shrine', 'greatTree', 'pagodaIce']) for (const d of PROPS[k] ?? []) claim(d.x, d.z, 9);
+  // stalls along the valley's paths
+  for (const p of NET.paths) if (p.island === 'valley' || p.island === 'snow') stallsAlong(p, 55, 0.3, rng);
+  // the home village's own fields + pasture right by the spawn
+  for (let i = 0; i < 60; i++) { const a = rng() * TAU, r = 190 + rng() * 220; farmPlot(VC.x + Math.cos(a) * r, VC.z + Math.sin(a) * r * 0.85, a, rng); }
+  for (let tries = 0; tries < 80 && !PASTURES.length; tries++) {
+    const a = rng() * TAU, x = VC.x + Math.cos(a) * (175 + tries * 4), z = VC.z + Math.sin(a) * (175 + tries * 4);
+    if (!flat(x, z, 16) || !claim(x, z, 18)) continue;
+    for (let k = 1; k < 9; k++) { const q = (k / 9) * TAU + a + 0.35; prop('fence', x + Math.cos(q) * 16, z + Math.sin(q) * 16, -q - Math.PI / 2, 1); }
+    PASTURES.push({ x, z, r: 14 });
+  }
+  // farming hamlets across the valley, each linked to the village
+  let made = 0;
+  for (let tries = 0; tries < 160 && made < 6; tries++) {
+    const x = v.cx + (rng() - 0.5) * v.rx * 1.5, z = v.cz + (rng() - 0.5) * v.rz * 1.5;
+    if (Math.hypot(x - VC.x, z - VC.z) < 330 || Math.abs(x - riverX(z)) < 70 || !flat(x, z, 12) || slopeAt(x, z) > 0.35) continue;
+    hamlet(x, z, 'valley', VC, rng); made++;
+  }
+  // snow hamlets
+  const sn = island('snow'); made = 0;
+  for (let tries = 0; tries < 120 && made < 2; tries++) {
+    const x = sn.cx + (rng() - 0.5) * sn.rx * 1.3, z = sn.cz + (rng() - 0.5) * sn.rz * 1.3;
+    if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 120 || !flat(x, z, 16)) continue;
+    hamlet(x, z, 'snow', null, rng, true); made++;
+  }
+  // city: food stalls (yatai) on the wider streets
+  for (const p of cityPaths) if (p.kind === 'street') stallsAlong(p, 90, 0.12, rng);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Sky roads (elevated, for flying traffic): a loop around downtown, ramps that descend to street level, a cross-town
 // flyover, and a long bridge to the airport. Pylons hold the decks up.
@@ -401,7 +518,7 @@ export function buildLayout(): void {
   airport();
   buildCityLots();
   cityFurniture();
-  godIsland(); sakuraValley(); yukigami(); islets();
+  godIsland(); sakuraValley(); yukigami(); islets(); countryside();
   // volcano: torii processional climbing the south face toward the crater, and a forge shrine at its foot
   for (let i = 0; i < 8; i++) {
     const t = i / 7, x = VOLCANO.x + Math.sin(t * 3) * 30 + 40 * (1 - t), z = VOLCANO.z + 560 - t * 330;

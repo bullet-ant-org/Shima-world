@@ -4,7 +4,7 @@ import { Assets } from '../rendering/assets';
 import { InstancePools, type PoolEntry } from '../rendering/instancing';
 import type { OutlineSpec } from '../rendering/outline';
 import {
-  benchGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
+  benchGeo, barnGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
 import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear } from './layout';
@@ -142,7 +142,10 @@ export class World {
       toro: { f: () => toroGeo(false), cast: false }, toroBig: { f: () => toroGeo(true), cast: true }, komainu: { f: komainuGeo, cast: true },
       terminal: { f: terminalGeo, cast: true }, airTower: { f: airTowerGeo, cast: true }, hangar: { f: hangarGeo, cast: true },
       plane0: { f: () => planeGeo(0), cast: true }, plane1: { f: () => planeGeo(1), cast: true }, plane2: { f: () => planeGeo(2), cast: true },
-      greatTree: { f: greatTreeGeo, cast: true }, torii: { f: toriiGeo, cast: true }, toriiIce: { f: toriiGeo, cast: true }, arch: { f: archGeo, cast: true },
+      greatTree: { f: greatTreeGeo, cast: true },
+      stall0: { f: () => stallGeo(0), cast: true }, stall1: { f: () => stallGeo(1), cast: true }, stall2: { f: () => stallGeo(2), cast: true }, stall3: { f: () => stallGeo(3), cast: true },
+      field0: { f: () => fieldGeo(0), cast: false }, field1: { f: () => fieldGeo(1), cast: false }, field2: { f: () => fieldGeo(2), cast: false }, field3: { f: () => fieldGeo(3), cast: false },
+      fence: { f: fenceGeo, cast: false }, barn: { f: barnGeo, cast: true }, haystack: { f: haystackGeo, cast: true }, scarecrow: { f: scarecrowGeo, cast: false }, torii: { f: toriiGeo, cast: true }, toriiIce: { f: toriiGeo, cast: true }, arch: { f: archGeo, cast: true },
     };
     for (const [kind, defs] of Object.entries(PROPS)) {
       if (kind === 'pylon') {

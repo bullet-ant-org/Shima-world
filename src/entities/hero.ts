@@ -23,8 +23,8 @@ import { defaultSpec, type CharacterSpec } from './character';
 import { hullGeo, outlineMat } from '../rendering/outline';
 import { ends, grad, keys, loft, type ColorFn, type LoftOpts, type V3 } from './sculpt';
 
-export type Mode = 'ground' | 'fly' | 'brace' | 'land';
-export interface PoseIn { dt: number; mode: Mode; hs: number; speed: number; vy: number; grounded: boolean; boost: boolean; bank: number }
+export type Mode = 'ground' | 'fly' | 'brace' | 'land' | 'ride';
+export interface PoseIn { dt: number; mode: Mode; hs: number; speed: number; vy: number; grounded: boolean; boost: boolean; bank: number; gait?: number }
 
 // joints
 const H = 0, SP = 1, HD = 2, T1 = 3, T2 = 4, S1 = 5, S2 = 6, SHL = 7, ELL = 8, SHR = 9, ELR = 10, THL = 11, KNL = 12, ANL = 13, THR = 14, KNR = 15, ANR = 16;
@@ -165,9 +165,9 @@ export class Hero {
   private T = new Float32Array(NJ * 3);       // final target pose
   private X = new Float32Array(NJ * 3);       // current joint angles
   private V = new Float32Array(NJ * 3);       // joint angular velocities (springs)
-  private G = new Float32Array(NJ * 3); private F = new Float32Array(NJ * 3); private B = new Float32Array(NJ * 3); private L = new Float32Array(NJ * 3); private A = new Float32Array(NJ * 3);
+  private G = new Float32Array(NJ * 3); private F = new Float32Array(NJ * 3); private B = new Float32Array(NJ * 3); private L = new Float32Array(NJ * 3); private A = new Float32Array(NJ * 3); private R = new Float32Array(NJ * 3);
   private clock = 0; private phase = 0;
-  private wFly = 0; private wBrace = 0; private wLand = 0; private wAir = 0; private wSpeed = 0; private wMove = 0; private wRun = 0;
+  private wRide = 0; private wFly = 0; private wBrace = 0; private wLand = 0; private wAir = 0; private wSpeed = 0; private wMove = 0; private wRun = 0;
   private hipY = HIP;
   private prevHs = 0; private acc = 0;
   private readonly rig = new THREE.Group();
@@ -308,9 +308,12 @@ export class Hero {
       const jawK = 0.3 * (1 - smooth(0.07, 0.16, y));                                     // V-shaped chin seen from above
       const back = 0.07 * Math.max(0, -s) * smooth(0.12, 0.24, y);                        // fuller back of the skull
       const cheek = 0.035 * c * c * Math.exp(-(((y - 0.12) / 0.04) ** 2));                // soft cheeks
-      return 1 - jawK * c * c * Math.max(0, s) + back + cheek;
+      // jaw: the back half of the lower rings reaches toward the neck/ear, giving a real jawline and jaw angle in profile
+      const jawZone = smooth(0.04, 0.085, y) * (1 - smooth(0.12, 0.16, y)), bs = Math.max(0, -s);
+      const jawBack = (0.42 + 0.14 * F_.jaw) * c * c * (1 - smooth(-0.25, 0.45, s)) * jawZone + 0.12 * bs * jawZone; void bs;
+      return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack;
     };
-    const headG = loft({ path: [[0, 0.035, 0.045], [0, 0.08, 0.03], [0, 0.14, 0.01], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 36, seg: 28, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
+    const headG = loft({ path: [[0, 0.035, 0.04], [0, 0.08, 0.026], [0, 0.14, 0.008], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 36, seg: 28, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
     // front of the face at a given height (for placing the nose)
     const frontZ = (yq: number) => { const P = headG.attributes.position; let best = 0, bd2 = 1e9; for (let i = 0; i < P.count; i++) { if (Math.abs(P.getX(i)) > 0.012 || P.getZ(i) < 0) continue; const d = Math.abs(P.getY(i) - yq); if (d < bd2) { bd2 = d; best = P.getZ(i); } } return best; };
     // painted face decal: the head's own front faces, lifted a hair along their normals, with planar UVs
@@ -716,6 +719,24 @@ export class Hero {
     S(a, S1, 0.6, 0, 0); S(a, T1, 0.5, 0, 0);
   }
 
+  /** riding: seated straddle, hands forward on the reins; leans into the gallop and posts with the gait */
+  private poseRide(a: Float32Array, p: PoseIn, c: number): void {
+    const S = Hero.set, g = p.gait ?? 0, sp = p.speed, gal = smooth(8, 11, sp), move = smooth(0.2, 1.2, sp);
+    const b = (0.05 * (1 - gal) * Math.sin(g * 2) + 0.07 * gal * Math.sin(g + 0.4)) * move;
+    S(a, H, -0.04 - b * 0.5, 0, 0);
+    S(a, SP, 0.08 + gal * 0.38 + b, 0, 0);
+    S(a, HD, -0.08 - gal * 0.34 - b, 0.04 * Math.sin(c * 0.5) * (1 - move), 0);
+    S(a, THL, -1.2, 0.12, -0.42); S(a, KNL, 1.5 + b, 0, 0); S(a, ANL, -0.3, 0, 0);
+    S(a, THR, -1.2, -0.12, 0.42); S(a, KNR, 1.5 + b, 0, 0); S(a, ANR, -0.3, 0, 0);
+    S(a, SHL, -0.7 - gal * 0.3 + b, 0.1, -0.22); S(a, ELL, -1.15 + gal * 0.25, 0, 0);
+    S(a, SHR, -0.7 - gal * 0.3 + b, -0.1, 0.22); S(a, ELR, -1.15 + gal * 0.25, 0, 0);
+    S(a, S1, 0.2 + sp * 0.06, 0, 0.05 * Math.sin(c * 2)); S(a, S2, 0.1 + sp * 0.05, 0, 0.1 * Math.sin(c * 2.6));
+    S(a, T1, 0.25 + sp * 0.05 + 0.08 * Math.sin(g * 2) * move, 0, 0.04 * Math.sin(c * 1.7)); S(a, T2, 0.15 + sp * 0.04, 0, 0.08 * Math.sin(g + 1) * move);
+  }
+
+  /** height of the seat (pelvis underside) above the model's origin, for placing the rider on a saddle */
+  get seatHeight(): number { return (this.hipY - 0.1) * this.rig.scale.y; }
+
   pose(p: PoseIn): void {
     const dt = Math.min(0.05, p.dt);
     this.clock += dt;
@@ -726,6 +747,7 @@ export class Hero {
     // state weights glide instead of snapping (takeoff, landing and braking blend over ~0.2-0.35 s)
     const rate = (cur: number, tgt: number, r: number) => cur + (tgt - cur) * Math.min(1, dt * r);
     this.wFly = rate(this.wFly, p.mode === 'fly' ? 1 : 0, 6);
+    this.wRide = rate(this.wRide, p.mode === 'ride' ? 1 : 0, 9);
     this.wBrace = rate(this.wBrace, p.mode === 'brace' ? 1 : 0, 12);
     this.wLand = rate(this.wLand, p.mode === 'land' ? 1 : 0, 14);
     this.wAir = rate(this.wAir, p.mode === 'ground' && !p.grounded ? 1 : 0, 14);
@@ -739,14 +761,14 @@ export class Hero {
     const tilt = clamp((PI / 2 - e) * 0.85 + (p.boost ? 0.12 : 0), 0, 2.7);
     this.poseFly(this.B, p.boost, tilt, p.bank, c); // B temporarily holds the fly pose
     for (let i = 0; i < NJ * 3; i++) this.F[i] = hov[i] * (1 - this.wSpeed) + this.B[i] * this.wSpeed;
-    this.poseBrace(this.B, c); this.poseLand(this.L);
+    this.poseBrace(this.B, c); this.poseLand(this.L); this.poseRide(this.R, p, c);
 
-    const wg = Math.max(0, 1 - this.wFly - this.wBrace - this.wLand), wa = this.wAir;
+    const wg = Math.max(0, 1 - this.wFly - this.wBrace - this.wLand - this.wRide), wa = this.wAir;
     for (let i = 0; i < NJ * 3; i++) {
       const ground = this.G[i] * (1 - wa) + this.A[i] * wa;
-      T[i] = ground * wg + this.F[i] * this.wFly + this.B[i] * this.wBrace + this.L[i] * this.wLand;
+      T[i] = ground * wg + this.F[i] * this.wFly + this.B[i] * this.wBrace + this.L[i] * this.wLand + this.R[i] * this.wRide;
     }
-    let hipY = hipG * wg + (HIP + Math.sin(c * 1.9) * 0.04 * (1 - this.wSpeed)) * this.wFly + 0.72 * this.wBrace + 0.62 * this.wLand;
+    let hipY = hipG * wg + (HIP + Math.sin(c * 1.9) * 0.04 * (1 - this.wSpeed)) * this.wFly + 0.72 * this.wBrace + 0.62 * this.wLand + HIP * this.wRide;
     hipY = clamp(hipY, 0.5, 1.1);
 
     // damped springs: stiff for the body, loose + under-damped for hair/scarf/ponytail so they swing and settle.

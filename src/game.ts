@@ -6,6 +6,8 @@ import { World } from './world/world';
 import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
+import { Herd } from './entities/horse';
+import { PASTURES } from './world/layout';
 import { Input } from './core/input';
 import { Network } from './network/network';
 import { DynamicResolution, type DeviceProfile } from './core/device';
@@ -35,6 +37,7 @@ export class Game {
   private assets = new Assets();
   private world!: World;
   private player!: Player;
+  private herd!: Herd;
   private npc!: NpcSystem;
   private traffic!: TrafficSystem;
   private skyTraffic!: TrafficSystem;
@@ -98,6 +101,9 @@ export class Game {
     if (save) this.gameTime = save.time;
     this.scene.add(this.player.group);
 
+    this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
+    this.scene.add(this.herd.group);
+    this.player.herd = this.herd;
     this.npc = new NpcSystem(q.npc, this.assets, q.outlines === 'all');
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
@@ -183,6 +189,7 @@ export class Game {
 
     // 3. simulation
     this.updatePlayer(dt);
+    this.herd.update(dt, this.player.x, this.player.z);
     this.gameTime = (this.gameTime + dt * (24 / 600)) % 24; // 10-minute day
     this.applyTime();
     this.updateWeather(dt);
@@ -227,7 +234,7 @@ export class Game {
 
   /** Buttons reflect the flight state: FLY<->LAND, BOOST appears while flying, JUMP/RUN become UP/DOWN. */
   private updateFlightUi(): void {
-    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0);
+    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0) | (P.mount ? 8 : 0) | (P.nearHorse ? 16 : 0);
     if (key === this.uiKey) return;
     this.uiKey = key;
     const $ = (id: string) => document.getElementById(id)!;
@@ -236,7 +243,9 @@ export class Game {
     $('boost-btn').classList.toggle('show', P.flying && !P.landing);
     $('boost-btn').classList.toggle('on', P.boost);
     $('jump-btn').textContent = P.flying ? 'UP' : 'JUMP';
-    $('run-btn').textContent = P.flying ? 'DOWN' : 'RUN';
+    $('run-btn').textContent = P.flying ? 'DOWN' : P.mount ? 'GALLOP' : 'RUN';
+    $('ride-btn').classList.toggle('show', !!(P.mount || P.nearHorse));
+    $('ride-btn').textContent = P.mount ? 'DISMOUNT' : 'RIDE';
   }
 
   /** Trail, hover sparkles, landing dust, speed lines, ground ring and the screen-edge speed glow. */
@@ -284,18 +293,19 @@ export class Game {
 
   private updateCamera(dt: number): void {
     const P = this.player;
-    const d = this.camDist + (P.flying ? (P.boost ? 4.5 : 1.5) : 0);
+    const ride = P.mount ? 1 : 0;
+    const d = this.camDist + (P.flying ? (P.boost ? 4.5 : 1.5) : 0) + ride * (2 + Math.min(3, P.hspeed * 0.15));
     this.camD += (d - this.camD) * (1 - Math.exp(-dt * 4));
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    const tx = P.x + Math.sin(this.camYaw) * cp * this.camD, tz = P.z + Math.cos(this.camYaw) * cp * this.camD, ty = P.y + 2.2 + sp * this.camD;
+    const tx = P.x + Math.sin(this.camYaw) * cp * this.camD, tz = P.z + Math.cos(this.camYaw) * cp * this.camD, ty = P.y + 2.2 + ride * 0.9 + sp * this.camD;
     const k = 1 - Math.exp(-dt * (P.flying ? 9 : 14));
     const c = this.camera.position;
     c.x += (tx - c.x) * k; c.z += (tz - c.z) * k; c.y += (Math.max(ty, heightAt(c.x, c.z) + 1.2) - c.y) * k;
     // speed sells the motion: widen the field of view while flying, a lot while boosting
-    const fovT = P.flying ? Math.min(100, 68 + P.speed3 * 0.4) : 65;
+    const fovT = P.flying ? Math.min(100, 68 + P.speed3 * 0.4) : 65 + ride * Math.min(12, P.hspeed * 0.6);
     this.camera.fov += (fovT - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.aspect = this.gr.aspect; this.camera.updateProjectionMatrix();
-    this.camera.lookAt(P.x, P.y + (P.flying ? 1.0 : 1.4), P.z);
+    this.camera.lookAt(P.x, P.y + (P.flying ? 1.0 : 1.4 + ride * 0.9), P.z);
   }
 
   // ---------------- day/night + weather ----------------

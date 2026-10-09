@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
 import { Hero, type Mode } from './hero';
 import { defaultSpec, normalize, type CharacterSpec } from './character';
+import { SEAT_Y, type Herd, type Horse } from './horse';
 import type { Input } from '../core/input';
 import { heightAt, mulberry32 } from '../world/terrain';
 import { NET, blockTop, blocked, cityPaths, inCity } from '../world/layout';
@@ -27,6 +28,10 @@ export class Player {
   yawRate = 0;
   /** one-shot / continuous FX requests read by the game */
   sliding = false; impact = 0;
+  herd: Herd | null = null;
+  mount: Horse | null = null;
+  /** a free horse close enough to mount (for the RIDE button) */
+  nearHorse: Horse | null = null;
 
   constructor(assets: Assets, spawn: { x: number; z: number }, spec?: CharacterSpec, ink = true) {
     this.hero = new Hero(assets, spec ? normalize(spec) : defaultSpec(), ink);
@@ -40,6 +45,7 @@ export class Player {
   get hspeed(): number { return Math.hypot(this.vx, this.vz); }
 
   teleport(x: number, z: number): void {
+    if (this.mount) { this.mount.ridden = false; this.mount = null; }
     this.x = x; this.z = z; this.vx = this.vz = this.vy = 0;
     this.y = Math.max(heightAt(x, z), 0); this.grounded = true; this.mode = 'ground'; this.boost = false; this.landing = false;
   }
@@ -59,8 +65,45 @@ export class Player {
     this.sliding = false;
     const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
     const mx = I.moveX, my = -I.moveY, mag = Math.min(1, Math.hypot(mx, my));
+    const rideTap = I.wasPressed('KeyR') || I.wasPressed('BtnRide');
+    this.nearHorse = this.mode === 'ground' && this.grounded && this.herd ? this.herd.nearestFree(this.x, this.z, 3.2) : null;
+
+    if (this.mode === 'ride' && this.mount) {
+      const h = this.mount;
+      if (rideTap || flyTap) {
+        // dismount to the left side (or take off straight from the saddle)
+        h.ridden = false; this.mount = null; h.speed = Math.min(h.speed, 2);
+        const lx = Math.cos(h.yaw), lz = -Math.sin(h.yaw);
+        this.x = h.x + lx * 1.1; this.z = h.z + lz * 1.1; this.y = Math.max(heightAt(this.x, this.z), 0);
+        this.vx = this.vz = 0; this.vy = 0;
+        if (flyTap) { this.mode = 'fly'; this.grounded = false; this.vy = 7; this.y = h.y + 1.6; }
+        else { this.mode = 'ground'; this.grounded = true; }
+        return;
+      }
+      // camera-relative steering: the horse turns toward the stick (slower turns at speed); RUN = gallop
+      let target = 0;
+      if (mag > 0.08) {
+        const dx = -sy * my + cy * mx, dz = -cy * my - sy * mx;
+        let d = Math.atan2(dx, dz) - h.yaw; d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+        const turn = (2.8 - Math.min(1.6, h.speed * 0.09)) * dt;
+        h.yaw += Math.max(-turn, Math.min(turn, d));
+        this.yawRate = d;
+        target = (I.run ? 17 : mag > 0.6 ? 7.5 : 2.6) * (Math.abs(d) > 2.2 ? 0.25 : 1);
+      }
+      const k = 1 - Math.exp(-dt * (target > h.speed ? 1.5 : 2.6));
+      h.speed += (target - h.speed) * k;
+      if (I.jump && h.grounded && h.speed > 1) { h.vy = 6.2; h.grounded = false; }
+      h.move(dt);
+      this.x = h.x; this.z = h.z; this.y = h.y; this.yaw = h.yaw;
+      this.vx = Math.sin(h.yaw) * h.speed; this.vz = Math.cos(h.yaw) * h.speed; this.vy = h.vy; this.grounded = h.grounded;
+      return;
+    }
 
     if (this.mode === 'ground') {
+      if (rideTap && this.nearHorse) {
+        const h = this.nearHorse; h.ridden = true; this.mount = h; this.mode = 'ride'; this.nearHorse = null;
+        this.x = h.x; this.z = h.z; this.yaw = h.yaw; return;
+      }
       if (flyTap) { this.mode = 'fly'; this.grounded = false; this.vy = 6; this.boost = false; this.landing = false; return; }
       const speed = I.run ? 7.8 : 3.6;
       const tvx = (-sy * my + cy * mx) * speed, tvz = (-cy * my - sy * mx) * speed;
@@ -155,9 +198,15 @@ export class Player {
 
   sync(dt: number): void {
     const bank = this.mode === 'fly' ? Math.max(-0.7, Math.min(0.7, -this.yawRate * 0.18)) : 0;
-    this.hero.pose({ dt, mode: this.mode, hs: this.hspeed, speed: this.speed3, vy: this.vy, grounded: this.grounded, boost: this.boost, bank });
-    this.group.position.set(this.x, this.y, this.z);
-    this.group.rotation.y = this.yaw;
+    const h = this.mount;
+    this.hero.pose({ dt, mode: this.mode, hs: this.hspeed, speed: h ? h.speed : this.speed3, vy: this.vy, grounded: this.grounded, boost: this.boost, bank, gait: h ? h.phase : 0 });
+    if (h) {
+      this.group.position.set(h.x, h.y + h.bob + SEAT_Y - this.hero.seatHeight, h.z);
+      this.group.rotation.set(h.pitch * 0.6, h.yaw, 0, 'YXZ');
+    } else {
+      this.group.position.set(this.x, this.y, this.z);
+      this.group.rotation.set(0, this.yaw, 0);
+    }
   }
 }
 

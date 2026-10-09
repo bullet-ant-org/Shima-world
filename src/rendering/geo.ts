@@ -791,3 +791,104 @@ export function planeGeo(livery = 0): Pair {
   m.box(0, 1.5, -2, 0.5, 3, 0.5, dark); m.box(0, 1.5, 12, 0.5, 3, 0.5, dark);
   return done(m, l);
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Countryside: market stalls, farm fields, fences, barns, haystacks, scarecrows
+// ---------------------------------------------------------------------------------------------------------------------
+const AWNINGS: [number, number][] = [[0xc8283c, 0xf4efe2], [0x2a6ad8, 0xf4efe2], [0x2f9a5a, 0xf2e6b8], [0xe8902a, 0xfff2d8]];
+const PRODUCE = [0xe8392f, 0xf2a02a, 0xf4d23a, 0x6ab82e, 0x8a3ab8, 0xf0e8d0, 0x3a8a2e];
+
+/** Roadside stall: plank counter heaped with produce crates, striped cloth awning on four posts, paper lantern. */
+export function stallGeo(v: number): Pair {
+  const m = new MB(), l = new MB(), [ca, cb] = AWNINGS[v % AWNINGS.length], rng = mulberry32(17 + v * 31);
+  const W = 3.6, D = 2.2;
+  for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) m.box((x * W) / 2, 1.3, (z * D) / 2, 0.14, 2.6 + (z < 0 ? 0.4 : 0), 0.14, WOOD);
+  m.box(0, 0.95, D / 2 - 0.3, W, 0.12, 0.9, hex(0x8a6a4a));                                  // counter top
+  m.box(0, 0.48, D / 2 - 0.3, W - 0.1, 0.84, 0.8, WOOD_D, 63 & ~32);                          // counter front
+  for (let i = 0; i < 4; i++) {                                                               // crates of produce
+    const x = -W / 2 + 0.5 + i * 0.86;
+    m.box(x, 1.1, D / 2 - 0.3, 0.72, 0.2, 0.6, hex(0x9a7a52));
+    const c = hex(PRODUCE[Math.floor(rng() * PRODUCE.length)]);
+    for (let k = 0; k < 6; k++) m.box(x - 0.22 + (k % 3) * 0.22, 1.27 + (k > 2 ? 0.08 : 0), D / 2 - 0.42 + (k > 2 ? 0.22 : 0), 0.17, 0.15, 0.17, shade(c, 0.9 + rng() * 0.2));
+  }
+  m.box(0, 0.5, -D / 2 + 0.25, W - 0.3, 1, 0.4, hex(0x7a5a3a));                                // back shelf with jars
+  for (let i = 0; i < 6; i++) m.cyl(-W / 2 + 0.5 + i * 0.52, -D / 2 + 0.25, 0.12, 0.1, 1.0, 1.32, 6, hex([0x5a7ad8, 0xd8a03a, 0x8a4a2a][i % 3]));
+  // striped, sloped awning (front edge lower), with a scalloped valance
+  const n = 8, y0 = 2.62, y1 = 3.0;
+  for (let i = 0; i < n; i++) {
+    const xa = -W / 2 - 0.2 + ((W + 0.4) * i) / n, xb = xa + (W + 0.4) / n, col = hex(i % 2 ? cb : ca);
+    m.quad([xa, y0, D / 2 + 0.45], [xb, y0, D / 2 + 0.45], [xb, y1 + 0.4, -D / 2 - 0.2], [xa, y1 + 0.4, -D / 2 - 0.2], col, [0, 0, 0]);
+    m.quad([xa, y0, D / 2 + 0.45], [xb, y0, D / 2 + 0.45], [xb, y1 + 0.4, -D / 2 - 0.2], [xa, y1 + 0.4, -D / 2 - 0.2], shade(col, 0.7), [0, 6, 0]);
+    m.tri([xa, y0, D / 2 + 0.45], [xb, y0, D / 2 + 0.45], [(xa + xb) / 2, y0 - 0.32, D / 2 + 0.47], col, [0, y0, 0]);
+  }
+  m.box(W / 2 - 0.3, 2.2, D / 2 + 0.05, 0.02, 0.4, 0.02, WOOD_D);
+  m.box(W / 2 - 0.3, 1.85, D / 2 + 0.05, 0.36, 0.48, 0.36, RED); l.box(W / 2 - 0.3, 1.85, D / 2 + 0.05, 0.28, 0.4, 0.28, hex(0xffb25a));
+  m.box(-W / 2 - 0.5, 0.3, 0.2, 0.6, 0.6, 0.6, hex(0x9a7a52));                                // spare crates
+  m.box(-W / 2 - 0.45, 0.85, 0.25, 0.5, 0.5, 0.5, hex(0x8a6a42));
+  return done(m, l);
+}
+
+/** Farm plot (centred, local +z = row direction): raised, tilled bed with crop rows. v: 0 greens, 1 wheat, 2 cabbage, 3 flowers. */
+export function fieldGeo(v: number): Pair {
+  const m = new MB(), W = 16, D = 22, rows = 7, rng = mulberry32(91 + v * 13);
+  m.box(0, -2.6, 0, W + 0.8, 5.4, D + 0.8, hex(0x5a3e28), 63 & ~32);                           // terraced earth bed (deep skirt for slopes)
+  m.box(0, 0.2, 0, W + 0.9, 0.3, D + 0.9, hex(0x6b8a3a), 63 & ~16 & ~32);                     // grassy bund around the bed                           // earth bed (skirt hides slopes)
+  m.box(0, 0.12, 0, W, 0.06, D, hex(0x6a4a30), 16);
+  for (let r = 0; r < rows; r++) {
+    const x = -W / 2 + 1.2 + (r * (W - 2.4)) / (rows - 1);
+    m.box(x, 0.25, 0, 1.3, 0.26, D - 1.2, hex(0x7a5636), 63 & ~32);                           // ridge
+    if (v === 1) { m.box(x, 0.85, 0, 1.25, 0.95, D - 1.6, hex(0xd8b04a)); m.box(x, 1.36, 0, 1.15, 0.12, D - 1.8, hex(0xf0d27a)); }
+    else {
+      const step = v === 2 ? 1.1 : 0.8;
+      for (let z = -D / 2 + 1.2; z < D / 2 - 1; z += step) {
+        const s = 0.85 + rng() * 0.3;
+        if (v === 0) m.box(x, 0.55, z, 0.7 * s, 0.5 * s, 0.6 * s, shade(hex(0x5aa83a), 0.85 + rng() * 0.3));
+        else if (v === 2) { m.box(x, 0.6, z, 0.85 * s, 0.6 * s, 0.85 * s, hex(0x8ac85a)); m.box(x, 0.7, z, 0.55 * s, 0.55 * s, 0.55 * s, hex(0xc8e89a)); }
+        else { m.box(x, 0.55, z, 0.2, 0.55, 0.2, hex(0x4a8a2e)); m.box(x, 0.9, z, 0.5 * s, 0.3, 0.5 * s, hex([0xe84a8a, 0xf4d23a, 0xffffff, 0xa86ae8][Math.floor(rng() * 4)])); }
+      }
+    }
+  }
+  return done(m, new MB());
+}
+
+/** 12 m of split-rail fence along local x. */
+export function fenceGeo(): Pair {
+  const m = new MB();
+  for (let i = 0; i <= 4; i++) m.box(-6 + i * 3, 0.55, 0, 0.18, 1.5, 0.18, hex(0x7a5a3a));
+  m.box(0, 0.8, 0, 12, 0.12, 0.08, hex(0x8a6a4a)); m.box(0, 0.4, 0, 12, 0.12, 0.08, hex(0x8a6a4a));
+  return done(m, new MB());
+}
+
+/** Red barn with a two-slope roof, big double doors, hay loft and a lantern. */
+export function barnGeo(): Pair {
+  const m = new MB(), l = new MB(), w = 12, d = 16, h = 5.5, RED_B = hex(0xa83228), WHITE = hex(0xf0ece2);
+  m.box(0, -1.2, 0, w + 0.6, 2.6, d + 0.6, STONE_D, 63 & ~32);
+  m.box(0, h / 2 + 0.1, 0, w, h, d, RED_B);
+  for (const z of [-d / 2, d / 2]) {                                                         // gable ends
+    const hint: V3 = [0, h, 0];
+    m.tri([-w / 2, h + 0.1, z], [w / 2, h + 0.1, z], [0, h + 4.2, z], RED_B, hint);
+  }
+  for (const s of [-1, 1]) { const hint: V3 = [0, 0, 0]; m.quad([s * (w / 2 + 0.7), h - 0.3, -d / 2 - 0.6], [s * (w / 2 + 0.7), h - 0.3, d / 2 + 0.6], [0, h + 4.4, d / 2 + 0.6], [0, h + 4.4, -d / 2 - 0.6], hex(0x4a3a34), hint); }
+  m.box(0, 2.0, d / 2 + 0.06, 5, 3.8, 0.12, hex(0x7a2a22), 1 | 4 | 8 | 16);               // doors
+  m.box(0, 2.0, d / 2 + 0.14, 0.14, 3.8, 0.04, WHITE, 1); m.box(0, 3.9, d / 2 + 0.14, 5.1, 0.16, 0.04, WHITE, 1);
+  for (const s of [-1, 1]) { m.quad([s * 2.5, 0.1, d / 2 + 0.13], [s * 0.1, 3.9, d / 2 + 0.13], [s * 0.1, 3.7, d / 2 + 0.13], [s * 2.5, -0.1 + 0.2, d / 2 + 0.13], WHITE, [0, 2, 0]); }
+  m.box(0, h + 1.6, d / 2 + 0.08, 2, 1.6, 0.12, hex(0x3a2418), 1);                          // loft door
+  m.box(0, h + 1.6, d / 2 + 0.18, 1.6, 1.2, 0.04, hex(0xd8b04a), 1);                         // hay showing
+  for (const s of [-1, 1]) for (const z of [-4, 0, 4]) m.box(s * (w / 2 + 0.05), 3, z, 0.1, 1.2, 1.2, WHITE, s > 0 ? 4 : 8);
+  m.box(3.2, 4.3, d / 2 + 0.3, 0.36, 0.48, 0.36, RED); l.box(3.2, 4.3, d / 2 + 0.3, 0.28, 0.4, 0.28, hex(0xffb25a));
+  return done(m, l);
+}
+
+export function haystackGeo(): Pair {
+  const m = new MB(), HAY = hex(0xd8b04a);
+  m.cyl(0, 0, 1.5, 1.6, -0.2, 1.4, 10, HAY); m.cyl(0, 0, 1.6, 0.25, 1.4, 2.7, 10, shade(HAY, 1.08));
+  return done(m, new MB());
+}
+
+export function scarecrowGeo(): Pair {
+  const m = new MB();
+  m.box(0, 1, 0, 0.12, 2.4, 0.12, hex(0x6b4630)); m.box(0, 1.7, 0, 1.8, 0.1, 0.1, hex(0x6b4630));
+  m.box(0, 1.55, 0, 0.6, 0.8, 0.35, hex(0x3a5ab8)); m.box(0, 2.3, 0, 0.42, 0.42, 0.42, hex(0xe8d8a8));
+  m.cyl(0, 0, 0.75, 0.3, 2.45, 2.62, 10, hex(0xd8b04a)); m.cyl(0, 0, 0.3, 0.05, 2.62, 2.95, 8, hex(0xd8b04a));
+  return done(m, new MB());
+}

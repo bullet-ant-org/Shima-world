@@ -37,6 +37,8 @@
     #fly-btn.on { background: linear-gradient(135deg, #ffb02e, #ff3d6e); }
     #boost-btn { background: #1b1f3a; border: 1px solid #3a4075; visibility: hidden; }
     #boost-btn.show { visibility: visible; }
+    #ride-btn { display: none; grid-column: span 2; width: auto !important; height: 46px !important; border-radius: 23px !important; background: linear-gradient(135deg, #b0602a, #e6b23a); }
+    #ride-btn.show { display: block; }
     #boost-btn.on { background: linear-gradient(135deg, #ff3d9a, #ffb02e); }
     #speedfx { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(140,220,255,.18) 70%, rgba(220,245,255,.55) 100%); mix-blend-mode: screen; }
     #travel { position: fixed; right: 10px; top: 54px; display: none; flex-direction: column; gap: 6px; z-index: 7; }
@@ -111,7 +113,7 @@
   <div id="travel"></div>
   <div id="stickL"><div class="knob"></div></div>
   <div id="speedfx"></div>
-  <div id="acts"><button id="fly-btn">FLY</button><button id="boost-btn">BOOST</button><button id="jump-btn" class="alt">JUMP</button><button id="run-btn" class="alt">RUN</button></div>
+  <div id="acts"><button id="fly-btn">FLY</button><button id="boost-btn">BOOST</button><button id="jump-btn" class="alt">JUMP</button><button id="run-btn" class="alt">RUN</button><button id="ride-btn">RIDE</button></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
