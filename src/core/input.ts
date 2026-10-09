@@ -1,7 +1,9 @@
 /** Touch sticks (landscape layout) + keyboard fallback. Polled once per frame, no allocations. */
 export class Input {
   moveX = 0; moveY = 0;     // left stick / WASD
-  lookX = 0; lookY = 0;     // right stick / arrows
+  lookX = 0; lookY = 0;     // keyboard look (rad/s scale)
+  lookDX = 0; lookDY = 0;   // drag-to-look delta in pixels since last poll (touch/mouse on the right of the screen)
+  private dragAcc = { x: 0, y: 0 }; private dragId = -1; private dragLast = { x: 0, y: 0 };
   run = false; jump = false;
   private runBtn = false; private jumpBtn = false;
   private keys = new Set<string>();
@@ -9,7 +11,7 @@ export class Input {
   private sticks: { el: HTMLElement; knob: HTMLElement; id: number; x: number; y: number }[] = [];
 
   constructor() {
-    this.sticks.push(this.bind('stickL'), this.bind('stickR'));
+    this.sticks.push(this.bind('stickL'));
     const hold = (id: string, on: (v: boolean) => void) => {
       const b = document.getElementById(id)!;
       b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); on(true); });
@@ -18,6 +20,22 @@ export class Input {
     };
     hold('jump-btn', (v) => (this.jumpBtn = v));
     hold('run-btn', (v) => (this.runBtn = v));
+    for (const [id, code] of [['fly-btn', 'BtnFly'], ['boost-btn', 'BtnBoost']]) {
+      document.getElementById(id)!.addEventListener('pointerdown', () => this.tapped.add(code));
+    }
+    // look around by dragging anywhere on the right ~60% of the screen (no stick, no limits)
+    const cv = document.getElementById('c')!;
+    cv.addEventListener('pointerdown', (e) => {
+      if (this.dragId !== -1 || (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.4)) return;
+      this.dragId = e.pointerId; cv.setPointerCapture(e.pointerId); this.dragLast.x = e.clientX; this.dragLast.y = e.clientY;
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== this.dragId) return;
+      this.dragAcc.x += e.clientX - this.dragLast.x; this.dragAcc.y += e.clientY - this.dragLast.y;
+      this.dragLast.x = e.clientX; this.dragLast.y = e.clientY;
+    });
+    const endDrag = (e: PointerEvent) => { if (e.pointerId === this.dragId) this.dragId = -1; };
+    cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
     window.addEventListener('keydown', (e) => { this.keys.add(e.code); this.tapped.add(e.code); });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
   }
@@ -50,10 +68,11 @@ export class Input {
     if (k.has('KeyW')) my -= 1; if (k.has('KeyS')) my += 1;
     this.moveX = Math.max(-1, Math.min(1, mx));
     this.moveY = Math.max(-1, Math.min(1, my));
-    let lx = this.sticks[1].x, ly = this.sticks[1].y;
+    let lx = 0, ly = 0;
     if (k.has('ArrowLeft') || k.has('KeyQ')) lx -= 1; if (k.has('ArrowRight') || k.has('KeyE')) lx += 1;
     if (k.has('ArrowUp')) ly -= 1; if (k.has('ArrowDown')) ly += 1;
     this.lookX = lx; this.lookY = ly;
+    this.lookDX = this.dragAcc.x; this.lookDY = this.dragAcc.y; this.dragAcc.x = this.dragAcc.y = 0;
     this.run = this.runBtn || k.has('ShiftLeft');
     this.jump = this.jumpBtn || k.has('Space');
   }

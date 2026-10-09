@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { GameRenderer } from './rendering/renderer';
 import { Assets } from './rendering/assets';
 import { World } from './world/world';
+import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Input } from './core/input';
 import { Network } from './network/network';
@@ -60,6 +61,10 @@ export class Game {
   private hud = document.getElementById('hud')!;
   private zoneEl = document.getElementById('zone')!;
   private lastZone = '';
+  private uiKey = -1; private glowQ = -1; private camD = 7.5;
+  private trail = new Particles(260, 0.55); private dust = new Particles(160, 1.1, -1.2, 0.97);
+  private speedLines = new SpeedLines(); private hoverRing = new HoverRing();
+  private speedEl = document.getElementById('speedfx')!;
   private zoneId: IslandId = 'valley';
   private atm = { amt: 0.1, fog: 1, color: new THREE.Color(0xffc9dc) };
   private snowing = false;
@@ -88,7 +93,7 @@ export class Game {
     this.npc = new NpcSystem(q.npc, this.assets);
     this.traffic = new TrafficSystem(q.traffic, this.assets);
     this.remotes = new RemotePlayers(this.assets);
-    this.scene.add(this.npc.mesh, this.traffic.mesh, this.remotes.mesh);
+    this.scene.add(this.npc.mesh, this.traffic.mesh, this.remotes.mesh, this.trail.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
 
     // lighting: one directional (sun/moon) + hemisphere probe-style fill. No other dynamic lights.
     this.scene.add(this.sun, this.sun.target, this.hemi);
@@ -182,6 +187,7 @@ export class Game {
     // 5. animation / camera
     this.player.sync(dt);
     this.updateCamera(dt);
+    this.updateFx(dt, now);
     lap('anim');
 
     // 6. render
@@ -196,41 +202,85 @@ export class Game {
 
   private updatePlayer(dt: number): void {
     const P = this.player, I = this.input;
-    this.camYaw -= I.lookX * 2.4 * dt;
-    this.camPitch = Math.max(-0.2, Math.min(1.2, this.camPitch + I.lookY * 1.6 * dt));
-    const speed = I.run ? 9 : 5;
-    const fx = -Math.sin(this.camYaw), fz = -Math.cos(this.camYaw);   // forward
-    const rx = Math.cos(this.camYaw), rz = -Math.sin(this.camYaw);    // right
-    const mx = I.moveX, my = -I.moveY;
-    let tvx = (fx * my + rx * mx) * speed, tvz = (fz * my + rz * mx) * speed;
-    const k = 1 - Math.exp(-10 * dt);
-    P.vx += (tvx - P.vx) * k; P.vz += (tvz - P.vz) * k;
-    let nx = P.x + P.vx * dt, nz = P.z + P.vz * dt;
-    // collision: simple boxes for towers, sea blocks movement
-    if (blocked(nx, P.z) || heightAt(nx, P.z) < -0.3) { nx = P.x; P.vx = 0; }
-    if (blocked(P.x, nz) || heightAt(P.x, nz) < -0.3) { nz = P.z; P.vz = 0; }
-    P.x = nx; P.z = nz;
-    if (Math.abs(P.vx) + Math.abs(P.vz) > 0.5) P.yaw = Math.atan2(P.vx, P.vz);
-    const ground = Math.max(heightAt(P.x, P.z), 0);
-    if (I.jump && P.grounded) { P.vy = 7.5; P.grounded = false; }
-    P.vy -= 22 * dt; P.y += P.vy * dt;
-    if (P.y <= ground) { P.y = ground; P.vy = 0; P.grounded = true; }
+    // free look: drag on the right of the screen (unlimited yaw, pitch limited to straight up/down) + keyboard Q/E/arrows
+    this.camYaw -= I.lookX * 2.4 * dt + I.lookDX * 0.0055;
+    this.camPitch = Math.max(-1.35, Math.min(1.45, this.camPitch + I.lookY * 1.6 * dt + I.lookDY * 0.0042));
+    P.step(dt, I, this.camYaw, this.camPitch);
     // zone banner + atmosphere target
     const isl = zoneAt(P.x, P.z) === 'sea' ? null : islandAt(P.x, P.z);
     const name = isl ? isl.name : '';
     if (name !== this.lastZone) { this.lastZone = name; this.zoneEl.textContent = name; }
     if (isl) this.zoneId = isl.id;
+    this.updateFlightUi();
+  }
+
+  /** Buttons reflect the flight state: FLY<->LAND, BOOST appears while flying, JUMP/RUN become UP/DOWN. */
+  private updateFlightUi(): void {
+    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0);
+    if (key === this.uiKey) return;
+    this.uiKey = key;
+    const $ = (id: string) => document.getElementById(id)!;
+    $('fly-btn').textContent = P.flying ? (P.landing ? 'CANCEL' : 'LAND') : 'FLY';
+    $('fly-btn').classList.toggle('on', P.flying);
+    $('boost-btn').classList.toggle('show', P.flying && !P.landing);
+    $('boost-btn').classList.toggle('on', P.boost);
+    $('jump-btn').textContent = P.flying ? 'UP' : 'JUMP';
+    $('run-btn').textContent = P.flying ? 'DOWN' : 'RUN';
+  }
+
+  /** Trail, hover sparkles, landing dust, speed lines, ground ring and the screen-edge speed glow. */
+  private updateFx(dt: number, now: number): void {
+    const P = this.player, sp = P.speed3, fly = P.flying;
+    const hx = Math.sin(P.yaw), hz = Math.cos(P.yaw); // heading
+    if (fly) {
+      const by = P.y + 1.0;
+      if (sp > 4) { // jet plume from the back: more and brighter with speed / boost
+        const n = P.boost ? 4 : sp > 12 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const j = (Math.random() - 0.5) * 0.5;
+          this.trail.emit(P.x - hx * 0.5 + j, by + (Math.random() - 0.5) * 0.4, P.z - hz * 0.5 + j, -P.vx * 0.15 + j, -P.vy * 0.15 + j, -P.vz * 0.15 + j,
+            P.boost ? 0.7 : 0.45, P.boost ? 1 : 0.3, P.boost ? 0.55 : 0.85, 1);
+        }
+      } else if (Math.random() < dt * 40) { // hover: slow energy motes drifting down from the feet
+        this.trail.emit(P.x + (Math.random() - 0.5) * 0.6, P.y + 0.1, P.z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, -1.4 - Math.random(), (Math.random() - 0.5) * 0.4, 0.8, 0.25, 0.8, 1);
+      }
+    }
+    if (P.sliding) { // dust kicked up by the braking foot
+      const s = P.hspeed;
+      for (let i = 0; i < 2; i++) {
+        this.dust.emit(P.x + hx * 0.3, P.y + 0.1, P.z + hz * 0.3, -hx * s * 0.2 + (Math.random() - 0.5) * 2, 0.8 + Math.random() * 1.6, -hz * s * 0.2 + (Math.random() - 0.5) * 2, 0.7, 0.62, 0.55, 0.45);
+      }
+    }
+    if (P.impact > 0) { // landing impact burst
+      P.impact = 0;
+      for (let i = 0; i < 36; i++) {
+        const a = Math.random() * 6.283, v = 2 + Math.random() * 5;
+        this.dust.emit(P.x, P.y + 0.15, P.z, Math.cos(a) * v, 0.5 + Math.random() * 2.5, Math.sin(a) * v, 0.9, 0.7, 0.62, 0.5);
+      }
+    }
+    this.trail.update(dt); this.dust.update(dt);
+    const c = this.camera.position;
+    this.speedLines.update(dt, sp, P.vx, P.vy, P.vz, c.x, c.y, c.z);
+    this.hoverRing.update(fly, P.x, Math.max(heightAt(P.x, P.z), 0), P.z, P.y - Math.max(heightAt(P.x, P.z), 0), now / 1000);
+    const glow = fly ? Math.min(0.9, Math.max(0, (sp - 20) / 60)) : 0;
+    const q = Math.round(glow * 20) / 20;
+    if (q !== this.glowQ) { this.glowQ = q; this.speedEl.style.opacity = String(q); }
   }
 
   private updateCamera(dt: number): void {
-    const P = this.player, d = this.camDist;
+    const P = this.player;
+    const d = this.camDist + (P.flying ? (P.boost ? 4.5 : 1.5) : 0);
+    this.camD += (d - this.camD) * (1 - Math.exp(-dt * 4));
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    const tx = P.x + Math.sin(this.camYaw) * cp * d, tz = P.z + Math.cos(this.camYaw) * cp * d, ty = P.y + 2.2 + sp * d;
-    const k = 1 - Math.exp(-14 * dt);
+    const tx = P.x + Math.sin(this.camYaw) * cp * this.camD, tz = P.z + Math.cos(this.camYaw) * cp * this.camD, ty = P.y + 2.2 + sp * this.camD;
+    const k = 1 - Math.exp(-dt * (P.flying ? 9 : 14));
     const c = this.camera.position;
     c.x += (tx - c.x) * k; c.z += (tz - c.z) * k; c.y += (Math.max(ty, heightAt(c.x, c.z) + 1.2) - c.y) * k;
+    // speed sells the motion: widen the field of view while flying, a lot while boosting
+    const fovT = P.flying ? Math.min(100, 68 + P.speed3 * 0.4) : 65;
+    this.camera.fov += (fovT - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.aspect = this.gr.aspect; this.camera.updateProjectionMatrix();
-    this.camera.lookAt(P.x, P.y + 1.4, P.z);
+    this.camera.lookAt(P.x, P.y + (P.flying ? 1.0 : 1.4), P.z);
   }
 
   // ---------------- day/night + weather ----------------

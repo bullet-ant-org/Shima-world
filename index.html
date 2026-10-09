@@ -28,11 +28,17 @@
     #topbtns { position: fixed; right: 10px; top: 10px; display: flex; gap: 8px; z-index: 6; }
     #topbtns button { padding: 8px 14px; font-size: 13px; }
     #update-btn { display: none; background: linear-gradient(90deg, #00e5ff, #00b36b); }
-    #stickL, #stickR { position: fixed; bottom: 18px; width: 130px; height: 130px; border-radius: 50%; border: 2px solid #ffffff44; background: #ffffff10; z-index: 5; }
-    #stickL { left: 28px; } #stickR { right: 28px; }
+    #stickL { position: fixed; bottom: 18px; width: 130px; height: 130px; border-radius: 50%; border: 2px solid #ffffff44; background: #ffffff10; z-index: 5; }
+    #stickL { left: 28px; }
     .knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px; border-radius: 50%; background: #ffffff55; }
-    #acts { position: fixed; right: 180px; bottom: 30px; display: flex; gap: 10px; z-index: 5; }
-    #acts button { width: 64px; height: 64px; border-radius: 50%; padding: 0; font-size: 12px; }
+    #acts { position: fixed; right: 26px; bottom: 26px; display: grid; grid-template-columns: 74px 74px; gap: 12px; z-index: 5; }
+    #acts button { width: 74px; height: 74px; border-radius: 50%; padding: 0; font-size: 12px; font-weight: 600; }
+    #fly-btn { background: linear-gradient(135deg, #25c8e6, #7a5cff); }
+    #fly-btn.on { background: linear-gradient(135deg, #ffb02e, #ff3d6e); }
+    #boost-btn { background: #1b1f3a; border: 1px solid #3a4075; visibility: hidden; }
+    #boost-btn.show { visibility: visible; }
+    #boost-btn.on { background: linear-gradient(135deg, #ff3d9a, #ffb02e); }
+    #speedfx { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(140,220,255,.18) 70%, rgba(220,245,255,.55) 100%); mix-blend-mode: screen; }
     #travel { position: fixed; right: 10px; top: 54px; display: none; flex-direction: column; gap: 6px; z-index: 7; }
     #travel.show { display: flex; }
     #travel button { padding: 9px 14px; font-size: 12px; text-align: left; background: #14183a; border: 1px solid #3a4075; }
@@ -73,8 +79,8 @@
   </div>
   <div id="travel"></div>
   <div id="stickL"><div class="knob"></div></div>
-  <div id="stickR"><div class="knob"></div></div>
-  <div id="acts"><button id="jump-btn" class="alt">JUMP</button><button id="run-btn" class="alt">RUN</button></div>
+  <div id="speedfx"></div>
+  <div id="acts"><button id="fly-btn">FLY</button><button id="boost-btn">BOOST</button><button id="jump-btn" class="alt">JUMP</button><button id="run-btn" class="alt">RUN</button></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -46,7 +46,7 @@ async function startGame(): Promise<void> {
   step(100, 'Done');
   show(null);
   $('topbtns').style.display = 'flex';
-  document.querySelectorAll<HTMLElement>('#stickL,#stickR,#acts,#zone').forEach((e) => (e.style.display = ''));
+  document.querySelectorAll<HTMLElement>('#stickL,#acts,#zone').forEach((e) => (e.style.display = ''));
   setInterval(() => { void checkForUpdate().then((u) => u && setUpdateReady()); }, 10 * 60 * 1000);
 }
 
@@ -58,7 +58,7 @@ async function boot(): Promise<void> {
 
   // hide in-game controls until the world is running
   $('topbtns').style.display = 'none';
-  document.querySelectorAll<HTMLElement>('#stickL,#stickR,#acts,#zone').forEach((e) => (e.style.display = 'none'));
+  document.querySelectorAll<HTMLElement>('#stickL,#acts,#zone').forEach((e) => (e.style.display = 'none'));
 
   if (!dev) {
     await registerSW({

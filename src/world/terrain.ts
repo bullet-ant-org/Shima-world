@@ -160,14 +160,15 @@ export function cityBlock(bi: number, bj: number): Bldg | null {
   return { x: cx, z: cz, w, d, h, cls, shrine };
 }
 
-/** Collision against city towers (axis-aligned footprints). */
-export function blocked(x: number, z: number): boolean {
-  if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return true;
-  const bi = Math.floor(x / BLOCK), bj = Math.floor(z / BLOCK);
-  const b = cityBlock(bi, bj);
-  if (!b || b.shrine) return false;
-  return Math.abs(x - b.x) < b.w / 2 + 0.4 && Math.abs(z - b.z) < b.d / 2 + 0.4;
+/** Top surface (world y) of whatever solid occupies this column, or -Infinity. Used so flyers can pass over towers. */
+export function blockTop(x: number, z: number): number {
+  if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return 3 + SPIRE.h;
+  const b = cityBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+  if (!b || b.shrine) return -Infinity;
+  return Math.abs(x - b.x) < b.w / 2 + 0.4 && Math.abs(z - b.z) < b.d / 2 + 0.4 ? 3 + b.h : -Infinity;
 }
+/** Collision against city towers (axis-aligned footprints) for walkers. */
+export const blocked = (x: number, z: number): boolean => blockTop(x, z) > -Infinity;
 
 export const inCity = (x: number, z: number) => x > 64 && x < 960 && z > -448 && z < 448;
 
