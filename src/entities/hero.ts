@@ -351,30 +351,31 @@ export class Hero {
     const wS = 1 + 0.1 * F_.width, jw = 1 + 0.16 * F_.jaw;
     const crownC = 0.228, crownR = 0.152;
     // anime lower face: narrow, tapering to a small rounded chin point; the Jaw slider moves the jaw angle, not the chin tip
-    const faceX = keys([[0.03, 0], [0.034, 0.011], [0.045, 0.02], [0.065, 0.036], [0.09, 0.063 * jw], [0.12, 0.099 * wS * Math.sqrt(jw)], [0.15, 0.119 * wS], [0.2, 0.133 * wS], [crownC, 0.135 * wS]]);
-    const faceZ = keys([[0.03, 0], [0.034, 0.011], [0.045, 0.022], [0.065, 0.042], [0.09, 0.072], [0.12, 0.104], [0.15, 0.123], [0.2, 0.135], [crownC, 0.14]]);
+    // soft, round anime face: full cheeks down to a wide, rounded chin (the Jaw slider moves the jaw angle)
+    const faceX = keys([[0.04, 0], [0.043, 0.022], [0.052, 0.038], [0.07, 0.062 * jw], [0.095, 0.092 * jw], [0.125, 0.114 * wS * Math.sqrt(jw)], [0.155, 0.126 * wS], [0.2, 0.134 * wS], [crownC, 0.135 * wS]]);
+    const faceZ = keys([[0.04, 0], [0.043, 0.02], [0.052, 0.036], [0.07, 0.06], [0.095, 0.088], [0.125, 0.113], [0.155, 0.128], [0.2, 0.136], [crownC, 0.14]]);
     const dome = (y: number) => Math.sqrt(Math.max(0, 1 - ((y - crownC) / crownR) ** 2));
     const hx = (y: number) => (y > crownC ? 0.135 * wS * dome(y) : faceX(y)), hz = (y: number) => (y > crownC ? 0.14 * dome(y) : faceZ(y));
-    const LOWER = keys([[0.03, 0.04], [0.05, 0.054], [0.07, 0.046], [0.09, 0.042], [0.11, 0.032], [0.135, 0.016], [0.16, 0.004], [0.18, 0]]);
+    const LOWER = keys([[0.04, 0.03], [0.055, 0.036], [0.075, 0.03], [0.095, 0.026], [0.115, 0.02], [0.14, 0.01], [0.16, 0.003], [0.18, 0]]);
     const headShape = (_t: number, a: number, p: THREE.Vector3) => {
       const s = Math.sin(a), c = Math.cos(a), y = p.y;
-      const jawK = 0.22 * (1 - smooth(0.08, 0.16, y));                                     // V-shaped chin seen from above
+      const jawK = 0.08 * (1 - smooth(0.06, 0.13, y));                                     // V-shaped chin seen from above
       const back = 0.07 * Math.max(0, -s) * smooth(0.12, 0.24, y);                        // fuller back of the skull
       const cheek = 0.035 * c * c * Math.exp(-(((y - 0.12) / 0.04) ** 2));                // soft cheeks
       // jaw: the back half of the lower rings reaches toward the neck/ear, giving a real jawline and jaw angle in profile
       const jawZone = smooth(0.06, 0.1, y) * (1 - smooth(0.13, 0.17, y)), bs = Math.max(0, -s);
-      const jawBack = (0.42 + 0.14 * F_.jaw) * c * c * (1 - smooth(-0.25, 0.45, s)) * jawZone + 0.12 * bs * jawZone; void bs;
-      const chin = 0.22 * Math.pow(Math.max(0, s), 4) * Math.exp(-(((y - 0.05) / 0.017) ** 2)); // rounded chin juts forward
+      const jawBack = (0.16 + 0.1 * F_.jaw) * c * c * (1 - smooth(-0.25, 0.45, s)) * jawZone + 0.06 * bs * jawZone; void bs;
+      const chin = 0.12 * Math.pow(Math.max(0, s), 1.5) * Math.exp(-(((y - 0.058) / 0.02) ** 2)); // broad, rounded chin
       // anime side view (absolute offsets on the front of the face): the lower face comes forward, the nose bridge slopes out
       // from between the eyes to a pointed tip that clears the eye line, the mouth sits back under it, then the chin
-      const ny = 0.117 + 0.007 * F_.noseHeight, frontN = Math.exp(-((c / 0.16) ** 2)) * Math.max(0, s), frontW = Math.exp(-((c / 0.55) ** 2)) * Math.max(0, s);
+      const ny = 0.117 + 0.007 * F_.noseHeight, frontN = Math.exp(-((c / 0.16) ** 2)) * Math.max(0, s), frontW = Math.pow(Math.max(0, s), 0.8);
       const bridge = y >= ny ? Math.max(0, 1 - (y - ny) / 0.045) ** 1.5 : Math.exp(-(((y - ny) / 0.0075) ** 2));
       const add = LOWER(y) * frontW + 0.03 * F_.noseSize * bridge * frontN + 0.004 * frontN * Math.exp(-(((y - (0.093 + 0.007 * F_.mouthHeight)) / 0.007) ** 2));
-      const chinF = (F_.chin ?? 0) * 0.026 * frontW * Math.exp(-(((y - 0.05) / 0.026) ** 2)); // chin slider: how far the chin comes forward
+      const chinF = (F_.chin ?? 0) * 0.022 * frontW * Math.exp(-(((y - 0.058) / 0.026) ** 2)); // chin slider: how far the chin comes forward
       const nose = (add + chinF) / Math.max(0.02, hz(y)), lips = 0;
       return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack + chin + nose + lips;
     };
-    const headG = loft({ path: [[0, 0.03, 0], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 52, seg: 32, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
+    const headG = loft({ path: [[0, 0.04, 0], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 52, seg: 32, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
     // front of the face at a given height (for placing the nose)
     // anime faces read flat: bend the normals on the front of the face toward the viewer so the toon ramp doesn't shade the
     // nose / mouth / chin area into a grey muzzle (the silhouette and outline keep the sculpted profile)
