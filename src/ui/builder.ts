@@ -16,7 +16,7 @@ const TG = (tab: Tab, label: string, path: string): Item => ({ tab, label, type:
 
 const ITEMS: Item[] = [
   S('BODY', 'Height', 'height', 0.9, 1.1), S('BODY', 'Build', 'build', 0, 1), S('BODY', 'Shoulders', 'shoulders', 0, 1), S('BODY', 'Bust', 'bust', 0, 1), S('BODY', 'Head size', 'head', 0.85, 1.2), CO('BODY', 'Skin', 'skin', SKIN_TONES),
-  S('FACE', 'Face width', 'face.width', -1, 1), S('FACE', 'Jaw', 'face.jaw', -1, 1), S('FACE', 'Chin forward', 'face.chin', -1, 1), S('FACE', 'Chin width', 'face.chinWidth', -1, 1),
+  S('FACE', 'Face width', 'face.width', -1, 1), S('FACE', 'Jaw', 'face.jaw', -1, 1), S('FACE', 'Chin forward', 'face.chin', -1, 1), S('FACE', 'Chin width', 'face.chinWidth', -1, 1), S('FACE', 'Cheek width', 'face.cheekWidth', -1, 1),
   CH('FACE', 'Eye shape', 'face.eyeShape', EYE_SHAPES), S('FACE', 'Eye size', 'face.eyeSize', 0.7, 1.3), S('FACE', 'Eye distance', 'face.eyeSpacing', -1, 1), S('FACE', 'Eye height', 'face.eyeHeight', -1, 1), S('FACE', 'Eye tilt', 'face.eyeTilt', -1, 1),
   CO('FACE', 'Eye colour', 'face.iris', IRIS_COLORS), S('FACE', 'Lashes', 'face.lash', 0, 1), CO('FACE', 'Eyeshadow', 'face.shadow', SHADOW_COLORS), S('FACE', 'Eyeshadow amount', 'face.shadowAmt', 0, 1),
   S('FACE', 'Brow thickness', 'face.brow', 0, 1), S('FACE', 'Brow angle', 'face.browAngle', -1, 1), S('FACE', 'Brow height', 'face.browHeight', -1, 1),

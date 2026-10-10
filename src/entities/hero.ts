@@ -353,7 +353,8 @@ export class Hero {
     // anime lower face: narrow, tapering to a small rounded chin point; the Jaw slider moves the jaw angle, not the chin tip
     // soft, round anime face: full cheeks down to a wide, rounded chin (the Jaw slider moves the jaw angle)
     const cw = 1 + 0.5 * (F_.chinWidth ?? 0); // chin width slider (affects the lower face only)
-    const faceX = keys([[0.04, 0], [0.043, 0.022 * cw], [0.052, 0.038 * cw], [0.07, 0.062 * jw * (1 + 0.6 * (cw - 1))], [0.095, 0.092 * jw], [0.125, 0.114 * wS * Math.sqrt(jw)], [0.155, 0.126 * wS], [0.2, 0.134 * wS], [crownC, 0.135 * wS]]);
+    const ck = 1 + 0.16 * (F_.cheekWidth ?? 0); // cheek width slider (mid face)
+    const faceX = keys([[0.04, 0], [0.043, 0.022 * cw], [0.052, 0.038 * cw], [0.07, 0.062 * jw * (1 + 0.6 * (cw - 1))], [0.095, 0.092 * jw * (1 + 0.6 * (ck - 1))], [0.125, 0.114 * wS * Math.sqrt(jw) * ck], [0.155, 0.126 * wS * (1 + 0.5 * (ck - 1))], [0.2, 0.134 * wS], [crownC, 0.135 * wS]]);
     const faceZ = keys([[0.04, 0], [0.043, 0.02], [0.052, 0.036], [0.07, 0.06], [0.095, 0.088], [0.125, 0.113], [0.155, 0.128], [0.2, 0.136], [crownC, 0.14]]);
     const dome = (y: number) => Math.sqrt(Math.max(0, 1 - ((y - crownC) / crownR) ** 2));
     const hx = (y: number) => (y > crownC ? 0.135 * wS * dome(y) : faceX(y)), hz = (y: number) => (y > crownC ? 0.14 * dome(y) : faceZ(y));

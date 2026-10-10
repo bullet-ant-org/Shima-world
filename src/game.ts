@@ -28,8 +28,9 @@ const ATMOS: Record<IslandId, { tint: THREE.Color; amt: number; fog: number; sno
   islet: { tint: new THREE.Color(0xd8ecff), amt: 0.12, fog: 1, snow: false, light: 1 },
 };
 const TINT = new THREE.Color();
-const SKY_DAY = new THREE.Color(0x8fcbff), SKY_DUSK = new THREE.Color(0xff9a6b), SKY_NIGHT = new THREE.Color(0x050818);
-const SUN_DAY = new THREE.Color(0xfff2dd), SUN_DUSK = new THREE.Color(0xff9d5c), MOON = new THREE.Color(0x7d9cff);
+const SKY_DAY = new THREE.Color(0x8fcbff), SKY_DUSK = new THREE.Color(0xff9a6b), SKY_NIGHT = new THREE.Color(0x34405e); // moonlit blue-grey, not black
+const NIGHT_FILL = new THREE.Color(0xc8d4f0), WHITE = new THREE.Color(0xffffff);
+const SUN_DAY = new THREE.Color(0xfff2dd), SUN_DUSK = new THREE.Color(0xff9d5c), MOON = new THREE.Color(0xb4c4ec);
 
 export class Game {
   readonly scene = new THREE.Scene();
@@ -351,9 +352,10 @@ export class Game {
     this.sun.position.set(P.x + dir.x * 220, P.y + dir.y * 220, P.z + dir.z * 220);
     this.sun.target.position.set(P.x, P.y, P.z);
     this.sun.color.copy(MOON).lerp(SUN_DAY, day).lerp(SUN_DUSK, dusk * 0.8);
-    this.sun.intensity = (0.6 + 2.0 * day) * (1 - this.rainNow * 0.5) * this.atm.light;
-    this.hemi.intensity = (0.5 + 0.6 * day) * (0.55 + 0.45 * this.atm.light);
-    this.hemi.color.copy(sky).lerp(new THREE.Color(0xffffff), 0.35);
+    // nights stay readable: cool moonlight + a blue-grey ambient fill (daytime values unchanged)
+    this.sun.intensity = (1.15 + 1.45 * day) * (1 - this.rainNow * 0.5) * this.atm.light;
+    this.hemi.intensity = (0.95 + 0.15 * day) * (0.55 + 0.45 * this.atm.light);
+    this.hemi.color.copy(sky).lerp(night > 0.5 ? NIGHT_FILL : WHITE, 0.35 + 0.25 * night);
     this.assets.setNight(night * (0.7 + 0.3 * this.rainNow));
     this.sunDir.set(Math.cos(a) * 0.8, elev, 0.45).normalize();
     this.sky.update(this.frameDt, this.camera.position, sky, night, this.sunDir, this.rainNow);

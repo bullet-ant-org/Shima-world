@@ -103,6 +103,18 @@ function catalog(): Record<Theme, BuildingSpec[]> & { low: BuildingSpec[] } {
   return { fin, ent, res, old, com, low };
 }
 
+/** true when a rotated footprint touches no street / sidewalk and no sky-road deck runs below its roof */
+function footprintClear(x: number, z: number, ry: number, hw: number, hd: number, top: number): boolean {
+  const c = Math.cos(ry), sn = Math.sin(ry);
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+    const lx = (i / 2) * (hw + 0.5), lz = (j / 2) * (hd + 0.5), px = x + lx * c + lz * sn, pz = z - lx * sn + lz * c;
+    if (NET.edgeDist(px, pz, 24) < 0.3) return false;
+    const sk = NET.nearest(px, pz, 14, ['sky']);
+    if (sk && sk.path.ys && Math.hypot(sk.path.x[sk.i] - px, sk.path.z[sk.i] - pz) < sk.path.width / 2 + 3 && sk.path.ys[sk.i] < top + 3) return false;
+  }
+  return true;
+}
+
 function buildCityLots(): void {
   const cat = catalog(), C = CITY_C, rng = mulberry32(31337);
   const placed: Building[] = [], count: Record<string, number> = { broadcast: 0 };
@@ -142,7 +154,9 @@ function buildCityLots(): void {
         const nn = NET.nearest(x, z, 70, ['avenue', 'street']);
         if (nn) ry = Math.atan2(nn.path.x[nn.i] - x, nn.path.z[nn.i] - z);
       }
-      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'bank' ? 30 : spec.tpl === 'market' || spec.tpl === 'dealer' ? 12 : spec.tpl === 'fortress' ? 30 : spec.tpl === 'shop' ? 8.5 : spec.tpl === 'hq' ? spec.fl * 3.6 + 50 : spec.fl * 3.6 + 8) };
+      const pad = spec.tpl === 'hq' ? 5 : spec.tpl === 'fortress' ? 6 : 0;            // podium / outer wall wider than the spec
+      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2 + pad, hd: spec.d / 2 + pad, top: 3 + (spec.tpl === 'bank' ? 32 : spec.tpl === 'market' || spec.tpl === 'dealer' ? 13 : spec.tpl === 'fortress' ? 28 : spec.tpl === 'shop' ? 6.5 : spec.tpl === 'hq' ? spec.fl * 3.6 + 45 : spec.tpl === 'broadcast' ? spec.fl * 3.6 + 2 : spec.fl * 3.6 + 4) };
+      if (!footprintClear(x, z, ry, b.hw, b.hd, b.top)) continue;
       placed.push(b); BUILDINGS.push(b); count[spec.tpl] = (count[spec.tpl] ?? 0) + 1;
       const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b);
     }
@@ -160,7 +174,8 @@ function buildCityLots(): void {
       if (near(x, z, hr * 1.02)) continue;
       const nn = NET.nearest(x, z, 45, ['avenue', 'street']);
       const ry = nn ? Math.atan2(nn.path.x[nn.i] - x, nn.path.z[nn.i] - z) : Math.atan2(-Math.cos(a), -Math.sin(a));
-      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'shop' ? 8.5 : spec.fl * 3.6 + 8) };
+      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'shop' ? 6.5 : spec.fl * 3.6 + 4) };
+      if (!footprintClear(x, z, ry, b.hw, b.hd, b.top)) continue;
       placed.push(b); BUILDINGS.push(b);
       const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b);
     }
@@ -171,7 +186,7 @@ export function buildingsNear(x: number, z: number): Building[] { return bIndex.
 
 /** Footprint test in building-local space that follows each design's real silhouette (so there are no invisible corners). */
 function inside(b: Building, lx: number, lz: number): boolean {
-  const m = 0.4;
+  const m = 0.15;
   switch (b.spec.tpl) {
     case 'round': return Math.hypot(lx, lz) < Math.min(b.hw, b.hd) + m;
     case 'wedge': return lz > -b.hd - m && lz < b.hd + m && Math.abs(lx) < b.hw * (1 - (lz + b.hd) / (2 * b.hd)) + m;
@@ -182,8 +197,35 @@ function inside(b: Building, lx: number, lz: number): boolean {
   }
 }
 
+/** solid village / farm props: half width, local z range (front = +z), height */
+const PROP_SOLID: Record<string, [number, number, number, number]> = {
+  house0: [5.1, -4.1, 4.1, 9], house1: [6.1, -4.9, 4.9, 10], house2: [4.6, -4.1, 4.1, 12],
+  cabin0: [5.1, -4.1, 4.1, 9], cabin1: [6.1, -4.9, 4.9, 10], cabin2: [4.6, -4.1, 4.1, 12],
+  temple: [17, -13, 13, 26], shrine: [3.6, -3, 3, 8], barn: [6.3, -8.3, 8.3, 10], pagoda: [6, -6, 6, 32], pagodaIce: [6, -6, 6, 32],
+  stall0: [1.9, -1.2, 1.2, 3.2], stall1: [1.9, -1.2, 1.2, 3.2], stall2: [1.9, -1.2, 1.2, 3.2], stall3: [1.9, -1.2, 1.2, 3.2],
+  haystack: [1.5, -1.5, 1.5, 2.7], greatTree: [2.2, -2.2, 2.2, 30], komainu: [0.9, -1.2, 1.2, 2.4], toroBig: [1, -1, 1, 3.5],
+};
+interface Solid { x: number; z: number; c: number; s: number; hw: number; z0: number; z1: number; top: number }
+let solidGrid: Map<string, Solid[]> | null = null;
+function solids(): Map<string, Solid[]> {
+  if (solidGrid) return solidGrid;
+  solidGrid = new Map();
+  for (const [k, [hw, z0, z1, h]] of Object.entries(PROP_SOLID)) for (const d of PROPS[k] ?? []) {
+    const o: Solid = { x: d.x, z: d.z, c: Math.cos(d.ry), s: Math.sin(d.ry), hw: hw * d.s, z0: z0 * d.s, z1: z1 * d.s, top: heightAt(d.x, d.z) + h * d.s };
+    const r = Math.max(o.hw, -o.z0, o.z1);
+    for (let i = Math.floor((d.x - r) / 32); i <= Math.floor((d.x + r) / 32); i++) for (let j = Math.floor((d.z - r) / 32); j <= Math.floor((d.z + r) / 32); j++) {
+      const key = i + ',' + j; (solidGrid.get(key) ?? solidGrid.set(key, []).get(key)!).push(o);
+    }
+  }
+  return solidGrid;
+}
+
 /** Top (world y) of whatever solid stands at this column, else -Infinity. Walkers are blocked, flyers pass over. */
 export function blockTop(x: number, z: number): number {
+  for (const o of solids().get(Math.floor(x / 32) + ',' + Math.floor(z / 32)) ?? []) {
+    const dx = x - o.x, dz = z - o.z, lx = dx * o.c - dz * o.s, lz = dx * o.s + dz * o.c;
+    if (Math.abs(lx) < o.hw && lz > o.z0 && lz < o.z1) return o.top;
+  }
   if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return 3 + SPIRE.h;
   if (Math.abs(x - CITY_C.x) > 1000 || Math.abs(z - CITY_C.z) > 1000) return -Infinity;
   const cx = Math.floor(x / BCELL), cz = Math.floor(z / BCELL);

@@ -27,20 +27,20 @@ const SADDLES = [[0x5a3018, 0xc8283c], [0x2a1a10, 0x2a6ad8], [0x6a4020, 0x2f9a5a
 type Part = 'body' | 'neck' | 'head' | 'tail' | 'fu' | 'fl' | 'hu' | 'hl';
 const cache = new Map<number, Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }>>();
 
-const FRONT = { y: 1.08, z: 0.5 }, HIND = { y: 1.12, z: -0.58 }, LEG_X = 0.15, UPPER = 0.5;
+const FRONT = { y: 1.08, z: 0.5 }, HIND = { y: 1.12, z: -0.58 }, LEG_X = 0.18, UPPER = 0.5;
 export const SEAT_Y = 1.58;
 
 function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }> {
   const hit = cache.get(coat); if (hit) return hit;
-  const prevDetail = setLoftDetail(0.7);
+  const prevDetail = setLoftDetail(0.95);
   const C = COATS[coat % COATS.length], [leather, cloth] = SADDLES[coat % SADDLES.length];
   const out = {} as Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }>;
   const put = (k: Part, geos: THREE.BufferGeometry[]) => { const g = mergeGeometries(geos)!; geos.forEach((x) => x.dispose()); out[k] = { g, hull: hullGeo(g) }; };
   const bodyCol = grad(C.body, C.dark, (_t, a) => 0.5 - 0.5 * Math.sin(a)); // darker belly
 
   // ---- body: barrel from rump to chest, with withers, belly and haunches ----
-  const bw = keys([[0, 0.17], [0.1, 0.26], [0.3, 0.28], [0.55, 0.25], [0.8, 0.27], [1, 0.2]]);
-  const bh = keys([[0, 0.2], [0.1, 0.31], [0.3, 0.33], [0.55, 0.33], [0.8, 0.35], [1, 0.27]]);
+  const bw = keys([[0, 0.2], [0.1, 0.32], [0.3, 0.345], [0.55, 0.32], [0.8, 0.345], [1, 0.27]]);
+  const bh = keys([[0, 0.22], [0.1, 0.33], [0.3, 0.355], [0.55, 0.35], [0.8, 0.37], [1, 0.3]]);
   const body: THREE.BufferGeometry[] = [loft({
     path: [[0, 1.2, -0.84], [0, 1.18, -0.55], [0, 1.14, 0], [0, 1.2, 0.45], [0, 1.25, 0.74]], steps: 26, seg: 22, up: [0, 1, 0],
     r: (t) => { const k = ends(t, 0.12, 0.12); return [bw(t) * k + 0.004, bh(t) * k + 0.004]; },
@@ -48,39 +48,40 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
     color: bodyCol,
   })];
   // saddle blanket, saddle with cantle + horn, girth, stirrups
-  body.push(loft({ path: [[0, 1.49, -0.3], [0, 1.53, 0.0], [0, 1.5, 0.3]], steps: 8, seg: 16, up: [0, 1, 0], r: (t) => [0.34 * ends(t, 0.08, 0.08) + 0.004, 0.05], shape: (_t, a) => (Math.sin(a) < 0 ? 1.6 : 1), color: cloth }));
+  body.push(loft({ path: [[0, 1.515, -0.3], [0, 1.545, 0.0], [0, 1.52, 0.3]], steps: 10, seg: 24, up: [0, 1, 0], r: (t) => [0.4 * ends(t, 0.1, 0.1) + 0.004, 0.035 * ends(t, 0.1, 0.1) + 0.004], color: cloth }));
+  for (const sx of [-1, 1]) body.push(loft({ path: [[sx * 0.33, 1.42, -0.26], [sx * 0.37, 1.24, -0.24], [sx * 0.37, 1.24, 0.24], [sx * 0.33, 1.42, 0.26]], steps: 12, seg: 6, up: [sx, 0, 0], r: () => [0.012, 0.012], color: shadeHex(cloth, 0.7) })); // blanket hem draping down the flanks
   body.push(loft({ path: [[0, 1.55, -0.22], [0, 1.56, 0.0], [0, 1.57, 0.2]], steps: 10, seg: 14, up: [0, 1, 0], r: (t) => [0.2 * ends(t, 0.15, 0.15) + 0.003, 0.05 * ends(t, 0.15, 0.15) + 0.003], color: leather }));
   body.push(loft({ path: [[0, 1.56, -0.24], [0, 1.66, -0.26]], steps: 3, seg: 10, r: () => [0.14, 0.04], color: leather }));
   body.push(loft({ path: [[0, 1.57, 0.2], [0, 1.68, 0.24]], steps: 3, seg: 8, r: (t) => 0.03 * (1 - 0.3 * t), color: leather }));
   for (const s of [-1, 1]) {
-    body.push(loft({ path: [[s * 0.2, 1.52, 0.02], [s * 0.3, 1.3, 0.02], [s * 0.3, 1.06, 0.02]], steps: 6, seg: 6, r: () => [0.012, 0.02], color: leather }));
-    body.push(loft({ path: [[s * 0.3, 1.06, -0.05], [s * 0.3, 1.0, 0.0], [s * 0.3, 1.06, 0.05]], steps: 6, seg: 6, r: () => 0.012, color: 0xc8c8d0 }));
+    body.push(loft({ path: [[s * 0.24, 1.54, 0.02], [s * 0.38, 1.3, 0.02], [s * 0.39, 1.06, 0.02]], steps: 6, seg: 6, r: () => [0.012, 0.02], color: leather }));
+    body.push(loft({ path: [[s * 0.39, 1.06, -0.05], [s * 0.39, 1.0, 0.0], [s * 0.39, 1.06, 0.05]], steps: 6, seg: 6, r: () => 0.012, color: 0xc8c8d0 }));
   }
-  body.push(loft({ path: [[0.28, 1.25, 0.12], [0, 0.82, 0.14], [-0.28, 1.25, 0.12]], steps: 10, seg: 6, up: [0, 0, 1], r: () => [0.04, 0.012], color: leather }));
+  body.push(loft({ path: [[0.36, 1.25, 0.12], [0, 0.8, 0.14], [-0.36, 1.25, 0.12]], steps: 10, seg: 6, up: [0, 0, 1], r: () => [0.04, 0.012], color: leather }));
   put('body', body);
 
   // ---- neck (crest + mane) ----
   const neck: THREE.BufferGeometry[] = [loft({
-    path: [[0, -0.15, -0.08], [0, 0.15, 0.1], [0, 0.42, 0.3]], steps: 12, seg: 16, up: [1, 0, 0],
-    r: (t) => [0.21 - 0.08 * t, 0.15 - 0.05 * t], color: bodyCol,
+    path: [[0, -0.22, -0.12], [0, 0.15, 0.1], [0, 0.46, 0.32]], steps: 14, seg: 18, up: [1, 0, 0],
+    r: (t) => [0.3 - 0.13 * t, 0.19 - 0.07 * t], color: bodyCol,
   })];
   neck.push(loft({ path: [[0, -0.02, -0.2], [0, 0.22, -0.02], [0, 0.48, 0.2]], steps: 12, seg: 8, up: [1, 0, 0], r: (t) => [0.06 * (1 - 0.3 * t), 0.035], shape: (_t, a) => 1 + 0.25 * Math.abs(Math.sin(a * 5)), color: C.mane }));
   put('neck', neck);
 
   // ---- head: skull to muzzle, jaw cheek, ears, eyes, forelock, bridle ----
   const head: THREE.BufferGeometry[] = [loft({
-    path: [[0, 0.07, -0.06], [0, -0.1, 0.12], [0, -0.3, 0.34]], steps: 14, seg: 16, up: [1, 0, 0],
-    r: (t) => { const k = ends(t, 0.2, 0.18); return [(0.13 - 0.04 * t) * k + 0.003, (0.1 - 0.035 * t) * k + 0.003]; },
+    path: [[0, 0.08, -0.08], [0, -0.13, 0.15], [0, -0.38, 0.42]], steps: 16, seg: 18, up: [1, 0, 0],
+    r: (t) => { const k = ends(t, 0.2, 0.16); return [(0.16 - 0.06 * t) * k + 0.003, (0.12 - 0.045 * t) * k + 0.003]; },
     shape: (t, a) => 1 + 0.15 * Math.max(0, -Math.cos(a)) * Math.exp(-(((t - 0.25) / 0.15) ** 2)),
     color: grad(C.body, C.dark, (t) => smoothT(0.6, 1, t)),
   })];
   for (const s of [-1, 1]) {
     head.push(loft({ path: [[s * 0.05, 0.1, -0.03], [s * 0.07, 0.2, -0.05], [s * 0.075, 0.27, -0.04]], steps: 6, seg: 8, r: (t) => [0.03 * (1 - t) + 0.002, 0.018 * (1 - t) + 0.002], color: C.dark }));
-    head.push(loft({ path: [[s * 0.095, -0.03, 0.08], [s * 0.1, -0.035, 0.1]], steps: 2, seg: 8, r: () => 0.02, color: 0x120e0c }));
-    head.push(loft({ path: [[s * 0.06, -0.3, 0.33], [s * 0.07, -0.29, 0.345]], steps: 2, seg: 6, r: () => 0.012, color: 0x1a1210 }));
+    head.push(loft({ path: [[s * 0.112, -0.03, 0.06], [s * 0.118, -0.035, 0.085]], steps: 2, seg: 8, r: () => 0.022, color: 0x120e0c }));
+    head.push(loft({ path: [[s * 0.06, -0.36, 0.41], [s * 0.07, -0.35, 0.425]], steps: 2, seg: 6, r: () => 0.014, color: 0x1a1210 }));
   }
   head.push(loft({ path: [[0, 0.1, 0.0], [0, 0.04, 0.1], [0, -0.04, 0.16]], steps: 6, seg: 8, up: [1, 0, 0], r: (t) => [0.03 * (1 - t) + 0.002, 0.05 * (1 - t) + 0.003], color: C.mane }));
-  head.push(loft({ path: [[0.11, -0.2, 0.2], [0, -0.17, 0.28], [-0.11, -0.2, 0.2]], steps: 8, seg: 6, r: () => 0.012, color: leather }));
+  head.push(loft({ path: [[0.115, -0.24, 0.24], [0, -0.21, 0.33], [-0.115, -0.24, 0.24]], steps: 8, seg: 6, r: () => 0.013, color: leather }));
   head.push(loft({ path: [[0.1, 0.0, 0.0], [0, 0.08, -0.02], [-0.1, 0.0, 0.0]], steps: 8, seg: 6, r: () => 0.012, color: leather }));
   if (coat % 2 === 0) head.push(loft({ path: [[0, 0.02, 0.1], [0, -0.12, 0.25], [0, -0.22, 0.32]], steps: 8, seg: 8, up: [1, 0, 0], r: (t) => [0.008, 0.025 * (1 - 0.5 * t)], color: 0xf4f0ea })); // blaze
   put('head', head);
@@ -88,21 +89,21 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
   // ---- tail ----
   put('tail', [loft({
     path: [[0, 0.04, 0.02], [0, -0.12, -0.14], [0, -0.45, -0.22], [0, -0.8, -0.16]], steps: 14, seg: 10, up: [1, 0, 0],
-    r: (t) => [0.05 + 0.03 * Math.sin(PI * t), 0.07 + 0.06 * Math.sin(PI * Math.min(1, t * 1.2)) * (1 - t * 0.6)],
+    r: (t) => [0.07 + 0.04 * Math.sin(PI * t), 0.09 + 0.08 * Math.sin(PI * Math.min(1, t * 1.2)) * (1 - t * 0.5)],
     shape: (_t, a) => 1 + 0.15 * Math.abs(Math.sin(a * 4)), color: C.mane,
   })]);
 
   // ---- legs: upper (forearm / gaskin) and lower (cannon, fetlock, pastern, hoof) ----
   const upper = (hind: boolean) => {
-    const r = hind ? keys([[0, 0.16], [0.35, 0.11], [1, 0.062]]) : keys([[0, 0.13], [0.3, 0.1], [1, 0.06]]);
-    return [loft({ path: [[0, 0.14, hind ? -0.03 : 0.02], [0, -0.2, hind ? -0.04 : 0.01], [0, -UPPER, 0]], steps: 10, seg: 12, r: (t) => [r(t) * 0.78 * ends(t, 0.12, 0), r(t) * ends(t, 0.12, 0)], color: hind ? grad(C.body, C.dark, (t) => t) : grad(C.dark, C.body, (t) => 1 - t) })];
+    const r = hind ? keys([[0, 0.2], [0.35, 0.13], [1, 0.07]]) : keys([[0, 0.15], [0.3, 0.115], [1, 0.068]]);
+    return [loft({ path: [[0, 0.14, hind ? -0.03 : 0.02], [0, -0.2, hind ? -0.04 : 0.01], [0, -UPPER, 0]], steps: 10, seg: 12, r: (t) => [r(t) * 0.86 * ends(t, 0.12, 0), r(t) * ends(t, 0.12, 0)], color: hind ? grad(C.body, C.dark, (t) => t) : grad(C.dark, C.body, (t) => 1 - t) })];
   };
   const lower = () => {
-    const r = keys([[0, 0.055], [0.15, 0.045], [0.7, 0.042], [0.82, 0.056], [0.92, 0.046], [1, 0.05]]);
+    const r = keys([[0, 0.062], [0.15, 0.052], [0.7, 0.048], [0.82, 0.066], [0.92, 0.054], [1, 0.058]]);
     const lowC = C.sock ? grad(C.dark, 0xf4f0ea, (t) => (t > 0.6 ? 1 : 0)) : C.dark;
     return [
       loft({ path: [[0, 0.04, 0], [0, -0.2, 0], [0, -0.5, 0.012]], steps: 12, seg: 10, r: (t) => [r(t) * 0.8, r(t)], color: lowC }),
-      loft({ path: [[0, -0.49, 0.015], [0, -0.58, 0.03]], steps: 3, seg: 12, r: (t) => [0.058 + 0.012 * t, 0.065 + 0.016 * t], color: 0x2a2220, capEnd: true }),
+      loft({ path: [[0, -0.49, 0.015], [0, -0.58, 0.03]], steps: 3, seg: 12, r: (t) => [0.066 + 0.014 * t, 0.074 + 0.018 * t], color: 0x2a2220, capEnd: true }),
     ];
   };
   put('fu', upper(false)); put('hu', upper(true)); put('fl', lower()); put('hl', lower());
@@ -110,6 +111,7 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
   setLoftDetail(prevDetail);
   return out;
 }
+const shadeHex = (h: number, k: number) => { const c = new THREE.Color(h); c.multiplyScalar(k); return c.getHex(); };
 const smoothT = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class Horse {
