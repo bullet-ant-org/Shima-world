@@ -155,7 +155,7 @@ function bodyMaterial(ramp: THREE.Texture, SX: number): THREE.MeshToonNodeMateri
 // ---------------------------------------------------------------------------------------------------------------------
 // routines
 // ---------------------------------------------------------------------------------------------------------------------
-export enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse }
+export enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse, Play, Lie, Swim }
 interface Slot { x: number; z: number; ry: number; y0: number; act: Act; h0: number; h1: number; p: number; v: number; agent: number; seed: number }
 
 const SKIN = [0xffe0c8, 0xf7d0b0, 0xe8b890, 0xc89070, 0x9a6a4a, 0xffd8c0].map((h) => new THREE.Color(h));
@@ -411,7 +411,7 @@ export class Townsfolk {
   private assignStars(px: number, pz: number): void {
     if (!this.stars.length) return;
     const near: [number, number][] = [];
-    this.ag.forEach((a, i) => { if (a.on && a.v !== 2 && a.act !== Act.Sit && a.act !== Act.Plant && a.act !== Act.Hoe) { const d = Math.hypot(a.x - px, a.z - pz); if (d < 32) near.push([i, d]); } });
+    this.ag.forEach((a, i) => { if (a.on && a.v !== 2 && a.act !== Act.Sit && a.act !== Act.Plant && a.act !== Act.Hoe && a.act !== Act.Lie && a.act !== Act.Swim && a.act !== Act.Play) { const d = Math.hypot(a.x - px, a.z - pz); if (d < 32) near.push([i, d]); } });
     near.sort((a, b) => a[1] - b[1]);
     const want = new Set(near.slice(0, this.stars.length).map((n) => n[0]));
     for (const st of this.stars) if (st.agent >= 0 && (!want.has(st.agent) || !this.ag[st.agent].on)) { this.starOf.delete(st.agent); st.agent = -1; st.body.root.visible = false; }
@@ -444,7 +444,7 @@ export class Townsfolk {
       a.look += (Math.max(-1.1, Math.min(1.1, wrapped)) - a.look) * Math.min(1, step * 3);
       const bob = this.animate(a);
       this.pv.set(a.x, (a.slot === PINNED ? a.y : heightAt(a.x, a.z)) + a.lift + bob * a.sc, a.z);
-      this.q.setFromEuler(this.e.set(0, a.yaw, 0));
+      this.q.setFromEuler(this.e.set(a.slot === PINNED && a.act === Act.Lie ? -Math.PI / 2 : 0, a.yaw, 0, 'YXZ'));
       this.sv.setScalar(a.sc);
       const si = this.starOf.get(this.ag.indexOf(a));
       if (si !== undefined) {
@@ -521,6 +521,21 @@ export class Townsfolk {
         break;
       }
       case Act.Browse: shL = shR = 0.12; elL = elR = -0.35; rL = rR = 0.05; sp = 0.06; hd += 0.35 * Math.sin(t * 0.25); break;
+      case Act.Play: { // beach volleyball: ready crouch, then a jump with both arms up to play the ball
+        const c = (t * 0.55 + a.k * 0.37) % 1, jump = c > 0.75 ? Math.sin((c - 0.75) / 0.25 * Math.PI) : 0;
+        knL = knR = 0.55 - 0.5 * jump; hipL = hipR = -0.45 + 0.4 * jump; sp = 0.25 - 0.2 * jump;
+        shL = shR = -0.6 - 2.2 * jump; elL = elR = -0.5 + 0.4 * jump; rL = rR = 0.15; bob = -0.08 + 0.55 * jump;
+        break;
+      }
+      case Act.Lie: // sunbathing on a towel: lying on the back, hands behind the head, one knee up
+        hipL = -0.6; knL = 1.2; hipR = 0; knR = 0.05; shL = shR = -2.6; elL = elR = -2.0; rL = rR = 0.4; bob = 0.12;
+        break;
+      case Act.Swim: { // treading water / breaststroke: only head and shoulders above the surface
+        const u = t * 1.6 + a.k;
+        shL = shR = -1.4 + 0.3 * Math.sin(u); rL = rR = 0.6 + 0.5 * Math.sin(u); elL = elR = -0.4; hipL = 0.2 * Math.sin(u); hipR = -0.2 * Math.sin(u); knL = knR = 0.5;
+        bob = -1.25 + 0.06 * Math.sin(u * 2);
+        break;
+      }
     }
     A.setXYZW(k, hipL, knL, hipR, knR); B.setXYZW(k, shL, elL, shR, elR); C.setXYZW(k, rL, rR, sp, hd);
     return bob;
