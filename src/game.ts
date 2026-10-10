@@ -145,7 +145,7 @@ export class Game {
     this.port = new Seaport(this.assets); this.scene.add(this.port.group);
     this.ambient = new Ambient(this.assets.ramp, this.npc); this.scene.add(this.ambient.group);
     this.streetLights = new StreetLights(q.npc >= 150 ? 8 : q.npc >= 70 ? 5 : 3); this.scene.add(this.streetLights.group);
-    this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
+    this.traffic = new TrafficSystem(Math.round(q.traffic * 1.6), this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
     this.scene.add(this.npc.group, this.traffic.group, this.skyTraffic.group, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);

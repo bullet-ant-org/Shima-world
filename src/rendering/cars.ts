@@ -8,8 +8,8 @@ import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MB } from './geo';
 
-export type CarModel = 'sedan' | 'hatch' | 'taxi' | 'van' | 'sport' | 'hover';
-export const CAR_MODELS: CarModel[] = ['sedan', 'hatch', 'taxi', 'van', 'sport'];
+export type CarModel = 'sedan' | 'hatch' | 'taxi' | 'van' | 'sport' | 'hover' | 'bus' | 'truck';
+export const CAR_MODELS: CarModel[] = ['sedan', 'hatch', 'taxi', 'van', 'sport', 'sedan', 'hatch', 'bus', 'truck'];
 
 interface Station { z: number; top: number; w: number; belt: number }
 interface Spec { st: Station[]; wheelZ: number; wheelR: number; y0: number; hover?: boolean; roofSign?: boolean; boxy?: boolean }
@@ -52,6 +52,20 @@ const SPECS: Record<CarModel, Spec> = {
       { z: -0.1, top: 1.2, w: 0.88, belt: 0.74 }, { z: 0.6, top: 1.0, w: 0.94, belt: 0.74 }, { z: 1.4, top: 0.8, w: 0.98, belt: 0.68 }, { z: 2.1, top: 0.64, w: 0.96, belt: 0.56 }, { z: 2.4, top: 0.52, w: 0.86, belt: 0.44 },
     ],
   },
+  bus: {
+    y0: 0.38, wheelZ: 3.6, wheelR: 0.48, boxy: true,
+    st: [
+      { z: -5.6, top: 1.2, w: 1.18, belt: 1.1 }, { z: -5.5, top: 3.0, w: 1.22, belt: 1.2 }, { z: -2, top: 3.05, w: 1.24, belt: 1.2 }, { z: 2, top: 3.05, w: 1.24, belt: 1.2 },
+      { z: 5.3, top: 3.0, w: 1.22, belt: 1.2 }, { z: 5.6, top: 1.3, w: 1.18, belt: 1.0 },
+    ],
+  },
+  truck: {
+    y0: 0.4, wheelZ: 2.4, wheelR: 0.46, boxy: true,
+    st: [
+      { z: -3.6, top: 1.2, w: 1.1, belt: 1.1 }, { z: -3.5, top: 3.1, w: 1.14, belt: 3.0 }, { z: 0.9, top: 3.1, w: 1.14, belt: 3.0 }, { z: 1.0, top: 2.4, w: 1.06, belt: 1.25 },
+      { z: 2.6, top: 2.45, w: 1.06, belt: 1.25 }, { z: 3.2, top: 1.5, w: 1.04, belt: 1.1 }, { z: 3.4, top: 1.0, w: 0.98, belt: 0.8 },
+    ],
+  },
   hover: {
     y0: 0.18, wheelZ: 1.3, wheelR: 0.3, hover: true,
     st: [
@@ -79,9 +93,18 @@ function pushBox(r: Raw, cx: number, cy: number, cz: number, sx: number, sy: num
   f([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0]); f([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0]);
   f([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0]); f([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0]);
 }
-function pushWheel(r: Raw, x: number, y: number, z: number, rad: number, wid: number): void {
-  const n = 14;
-  for (const [rr, ww, col] of [[rad, wid, TRIM], [rad * 0.62, wid + 0.03, [0.82, 0.84, 0.9]]] as [number, number, number[]][]) {
+function pushWheel(r: Raw, x: number, y: number, z: number, rad: number, wid: number, metal: Raw = r): void {
+  const n = 16, sgn = x > 0 ? 1 : -1;
+  // spokes and centre cap on the rim face
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * 6.2832, c = Math.cos(a), sn = Math.sin(a);
+    const xo = x + sgn * (wid / 2 + 0.035), r0 = rad * 0.12, r1 = rad * 0.58, w = rad * 0.09;
+    const p = (rr: number, side: number) => [xo, y + c * rr - sn * side * w, z + sn * rr + c * side * w];
+    const nn = [sgn, 0, 0];
+    pushQuad(metal, sgn > 0 ? [p(r0, -1), p(r1, -1), p(r1, 1), p(r0, 1)] : [p(r0, 1), p(r1, 1), p(r1, -1), p(r0, -1)], [nn, nn, nn, nn], [0.62, 0.64, 0.68]);
+  }
+  pushBox(metal, x + sgn * (wid / 2 + 0.03), y, z, 0.03, rad * 0.24, rad * 0.24, [0.42, 0.43, 0.46]);
+  for (const [rr, ww, col] of [[rad, wid, TRIM], [rad * 0.64, wid + 0.03, [0.32, 0.33, 0.37]]] as [number, number, number[]][]) {
     for (let i = 0; i < n; i++) {
       const a0 = (i / n) * 6.2832, a1 = ((i + 1) / n) * 6.2832;
       const y0 = y + Math.cos(a0) * rr, z0 = z + Math.sin(a0) * rr, y1 = y + Math.cos(a1) * rr, z1 = z + Math.sin(a1) * rr;
@@ -138,11 +161,37 @@ function buildRaw(model: CarModel): { lit: Raw; lights: Raw } {
   }
   const front = st[st.length - 1], rear = st[0], mid = st[Math.floor(st.length / 2)];
   const wx = mid.w * 0.93;
-  if (!s.hover) for (const z of [-s.wheelZ, s.wheelZ]) for (const x of [-wx, wx]) pushWheel(lit, x, s.wheelR, z, s.wheelR, 0.24);
+  if (!s.hover) for (const z of [-s.wheelZ, s.wheelZ]) for (const x of [-wx, wx]) pushWheel(lit, x, s.wheelR, z, s.wheelR, 0.24, lights);
   else for (const z of [-s.wheelZ, s.wheelZ]) for (const x of [-wx * 0.9, wx * 0.9]) pushBox(lights, x, 0.12, z, 0.34, 0.06, 0.9, [0.3, 0.95, 1]); // hover pads
   // grille, mirrors, plates
   pushBox(lit, 0, front.top * 0.55, front.z - 0.02, front.w * 1.1, front.top * 0.4, 0.06, TRIM);
-  for (const x of [-1, 1]) pushBox(lit, x * (mid.w + 0.12), mid.belt + 0.35, mid.z + 0.55, 0.12, 0.14, 0.2, PAINT);
+  for (const x of [-1, 1]) { pushBox(lit, x * (mid.w + 0.12), mid.belt + 0.35, mid.z + 0.55, 0.12, 0.14, 0.2, PAINT); pushBox(lit, x * (mid.w + 0.05), mid.belt + 0.3, mid.z + 0.55, 0.1, 0.03, 0.04, TRIM); }
+  if (!s.hover) {
+    const big = model === 'bus' || model === 'truck';
+    for (const x of [-1, 1]) {
+      // wheel arches, side skirt, door seams, handles, B-pillar
+      for (const z of [-s.wheelZ, s.wheelZ]) pushBox(lit, x * (wx + 0.02), s.wheelR * 2 + 0.03, z, 0.12, 0.08, s.wheelR * 2.3, TRIM);
+      pushBox(lit, x * (mid.w * 0.95), y0 + 0.08, 0, 0.06, 0.1, (front.z - rear.z) * 0.62, [0.18, 0.18, 0.22]);
+      if (!big) {
+        for (const z of [-0.45, 0.65]) pushBox(lit, x * (mid.w + 0.005), (mid.belt + y0) / 2 + 0.12, z, 0.02, mid.belt - y0 - 0.08, 0.02, [0.55, 0.55, 0.6]);
+        for (const z of [-0.2, 0.9]) pushBox(lit, x * (mid.w + 0.02), mid.belt - 0.08, z, 0.03, 0.04, 0.16, [0.75, 0.76, 0.8]);
+        if (mid.top - mid.belt > 0.2) pushBox(lit, x * (mid.w * 0.86), (mid.top + mid.belt) / 2 + 0.04, 0.12, 0.03, mid.top - mid.belt - 0.08, 0.12, TRIM);
+      }
+      pushBox(lights, x * front.w * 0.86, front.top * 0.55, front.z + 0.01, 0.12, 0.08, 0.05, [1, 0.62, 0.12]);   // indicators
+      pushBox(lights, x * rear.w * 0.86, rear.top * 0.62, rear.z - 0.01, 0.12, 0.08, 0.05, [1, 0.62, 0.12]);
+    }
+    pushBox(lights, 0, front.top * 0.38, front.z + 0.02, 0.46, 0.12, 0.03, [0.86, 0.86, 0.82]);                     // number plates
+    pushBox(lights, 0, rear.top * 0.5, rear.z - 0.02, 0.46, 0.12, 0.03, [0.86, 0.86, 0.82]);
+    pushBox(lit, rear.w * 0.5, y0 + 0.04, rear.z - 0.05, 0.08, 0.08, 0.22, [0.6, 0.6, 0.62]);                      // exhaust
+    if (model === 'sport') { pushBox(lit, 0, rear.top + 0.28, rear.z + 0.18, rear.w * 1.8, 0.04, 0.3, PAINT); for (const x of [-0.6, 0.6]) pushBox(lit, x * rear.w, rear.top + 0.14, rear.z + 0.2, 0.05, 0.28, 0.08, TRIM); }
+    if (model === 'van' || model === 'bus') for (const x of [-0.6, 0.6]) pushBox(lit, x * mid.w, mid.top + 0.06, 0, 0.05, 0.06, (front.z - rear.z) * 0.6, [0.7, 0.7, 0.74]); // roof rails
+    if (model === 'bus') {
+      for (const x of [-1, 1]) for (let z = -4.6; z < 4.4; z += 1.5) pushBox(lit, x * (mid.w + 0.01), 2.15, z, 0.02, 1.0, 1.3, GLASS);
+      pushBox(lit, 0, 2.2, front.z + 0.02, mid.w * 1.8, 1.2, 0.03, GLASS); pushBox(lights, 0, 2.85, front.z + 0.04, mid.w * 1.2, 0.18, 0.03, [1, 0.7, 0.2]);
+      pushBox(lit, mid.w + 0.01, 1.4, 4.0, 0.03, 2.2, 1.1, [0.2, 0.25, 0.3]);                                     // door
+    }
+    if (model === 'truck') { pushBox(lit, 0, 1.75, -1.3, mid.w * 2.02, 2.7, 0.02, [0.8, 0.8, 0.82]); for (let z = -3.2; z < 0.8; z += 0.5) for (const x of [-1, 1]) pushBox(lit, x * (1.145), 2.0, z, 0.02, 1.9, 0.05, [0.82, 0.82, 0.86]); }
+  }
   // lights
   for (const x of [-1, 1]) {
     pushBox(lights, x * front.w * 0.62, front.top * 0.72, front.z + 0.01, 0.34, 0.12, 0.06, [1, 0.96, 0.75]);
