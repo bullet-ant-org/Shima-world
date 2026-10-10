@@ -1,6 +1,6 @@
 /** Character builder screen: schema-driven controls + live 3D preview. */
 import { Preview } from './preview';
-import { BOOTS, BOTTOMS, EARS, EYE_SHAPES, HAIR_COLORS, HAIR_STYLES, HATS, IRIS_COLORS, LIP_COLORS, MOUTHS, OUTFIT_COLORS, SHADOW_COLORS, SKIN_TONES, TOPS, defaultSpec, normalize, presets, randomSpec, type CharacterSpec, type Gender } from '../entities/character';
+import { BEARDS, GLASSES, WEAPONS, BOOTS, BOTTOMS, EARS, EYE_SHAPES, HAIR_COLORS, HAIR_STYLES, HATS, IRIS_COLORS, LIP_COLORS, MOUTHS, OUTFIT_COLORS, SHADOW_COLORS, SKIN_TONES, TOPS, defaultSpec, normalize, presets, randomSpec, type CharacterSpec, type Gender } from '../entities/character';
 
 type Tab = 'BODY' | 'FACE' | 'HAIR' | 'OUTFIT';
 type Item =
@@ -15,21 +15,21 @@ const CO = (tab: Tab, label: string, path: string, presets: string[]): Item => (
 const TG = (tab: Tab, label: string, path: string): Item => ({ tab, label, type: 'toggle', path });
 
 const ITEMS: Item[] = [
-  S('BODY', 'Height', 'height', 0.9, 1.1), S('BODY', 'Build', 'build', 0, 1), S('BODY', 'Head size', 'head', 0.85, 1.2), CO('BODY', 'Skin', 'skin', SKIN_TONES),
+  S('BODY', 'Height', 'height', 0.9, 1.1), S('BODY', 'Build', 'build', 0, 1), S('BODY', 'Shoulders', 'shoulders', 0, 1), S('BODY', 'Bust', 'bust', 0, 1), S('BODY', 'Head size', 'head', 0.85, 1.2), CO('BODY', 'Skin', 'skin', SKIN_TONES),
   S('FACE', 'Face width', 'face.width', -1, 1), S('FACE', 'Jaw', 'face.jaw', -1, 1),
   CH('FACE', 'Eye shape', 'face.eyeShape', EYE_SHAPES), S('FACE', 'Eye size', 'face.eyeSize', 0.7, 1.3), S('FACE', 'Eye distance', 'face.eyeSpacing', -1, 1), S('FACE', 'Eye height', 'face.eyeHeight', -1, 1), S('FACE', 'Eye tilt', 'face.eyeTilt', -1, 1),
   CO('FACE', 'Eye colour', 'face.iris', IRIS_COLORS), S('FACE', 'Lashes', 'face.lash', 0, 1), CO('FACE', 'Eyeshadow', 'face.shadow', SHADOW_COLORS), S('FACE', 'Eyeshadow amount', 'face.shadowAmt', 0, 1),
   S('FACE', 'Brow thickness', 'face.brow', 0, 1), S('FACE', 'Brow angle', 'face.browAngle', -1, 1), S('FACE', 'Brow height', 'face.browHeight', -1, 1),
   S('FACE', 'Nose size', 'face.noseSize', 0.6, 1.5), S('FACE', 'Nose broadness', 'face.noseWidth', 0.6, 1.6), S('FACE', 'Nose height', 'face.noseHeight', -1, 1),
   CH('FACE', 'Mouth', 'face.mouth', MOUTHS), CO('FACE', 'Lip colour', 'face.lips', LIP_COLORS), S('FACE', 'Lip tint', 'face.lipAmt', 0, 1), S('FACE', 'Mouth width', 'face.mouthWidth', 0.6, 1.5), S('FACE', 'Mouth height', 'face.mouthHeight', -1, 1),
-  S('FACE', 'Blush', 'face.blush', 0, 1), TG('FACE', 'Freckles', 'face.freckles'), CH('FACE', 'Ears', 'face.ears', EARS), S('FACE', 'Ear size', 'face.earSize', 0.7, 1.5),
+  S('FACE', 'Blush', 'face.blush', 0, 1), TG('FACE', 'Freckles', 'face.freckles'), CH('FACE', 'Facial hair', 'face.beard', BEARDS), TG('FACE', 'Scar', 'face.scar'), CH('FACE', 'Glasses', 'face.glasses', GLASSES), CH('FACE', 'Ears', 'face.ears', EARS), S('FACE', 'Ear size', 'face.earSize', 0.7, 1.5),
   CH('HAIR', 'Style', 'hair.style', HAIR_STYLES), CO('HAIR', 'Hair colour', 'hair.color', HAIR_COLORS), CO('HAIR', 'Tip colour', 'hair.tip', HAIR_COLORS), CO('HAIR', 'Highlight', 'hair.sheen', HAIR_COLORS), S('HAIR', 'Bangs', 'hair.bangs', 0.6, 1.5),
   CH('OUTFIT', 'Top', 'outfit.top', TOPS), CH('OUTFIT', 'Bottom', 'outfit.bottom', BOTTOMS), CH('OUTFIT', 'Boots', 'outfit.boots', BOOTS), CH('OUTFIT', 'Hat', 'outfit.hat', HATS), CO('OUTFIT', 'Hat colour', 'outfit.hatColor', OUTFIT_COLORS),
   TG('OUTFIT', 'Gloves', 'outfit.gloves'), CO('OUTFIT', 'Glove colour', 'outfit.gloveColor', ['#f7f8fd', '#181a26', '#e83a3a', '#e6b23a', '#2a7de1']), TG('OUTFIT', 'Earrings', 'outfit.earrings'),
   CO('OUTFIT', 'Main colour', 'outfit.primary', OUTFIT_COLORS), CO('OUTFIT', 'Second colour', 'outfit.secondary', OUTFIT_COLORS), CO('OUTFIT', 'Accent', 'outfit.accent', OUTFIT_COLORS),
   CO('OUTFIT', 'Trim', 'outfit.trim', ['#e6b23a', '#f2ecd8', '#c8c8d8', '#ff8a2a']), CO('OUTFIT', 'Legwear', 'outfit.pants', OUTFIT_COLORS), CO('OUTFIT', 'Boot colour', 'outfit.bootColor', ['#181a26', '#2a1a14', '#f2ecd8', '#34439a']),
   CO('OUTFIT', 'Scarf colour', 'outfit.scarfColor', OUTFIT_COLORS), CO('OUTFIT', 'Headband colour', 'outfit.headbandColor', OUTFIT_COLORS), CO('OUTFIT', 'Glow', 'outfit.glow', ['#45ecff', '#ff6ad0', '#8aff6a', '#ffd84a', '#b08aff']),
-  TG('OUTFIT', 'Scarf', 'outfit.scarf'), TG('OUTFIT', 'Katana', 'outfit.katana'), TG('OUTFIT', 'Headband', 'outfit.headband'), TG('OUTFIT', 'Wings', 'outfit.wings'),
+  TG('OUTFIT', 'Scarf', 'outfit.scarf'), CH('OUTFIT', 'Weapon', 'outfit.weapon', WEAPONS), TG('OUTFIT', 'Headband', 'outfit.headband'), TG('OUTFIT', 'Wings', 'outfit.wings'),
 ];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

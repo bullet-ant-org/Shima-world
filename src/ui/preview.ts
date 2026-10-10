@@ -14,6 +14,7 @@ export class Preview {
   private spec: CharacterSpec;
   private yaw = 0.5; private tYaw = 0.5; private zoom = 0; private tZoom = 0;
   private demo: Demo = 'idle';
+  private userTurned = false;
   private raf = 0; private last = 0; private dead = false; private timer = 0;
   private ro?: ResizeObserver;
   private cleanup: (() => void)[] = [];
@@ -61,7 +62,7 @@ export class Preview {
 
   private bindDrag(): void {
     let down = false, x0 = 0;
-    const d = (e: PointerEvent) => { down = true; x0 = e.clientX; this.canvas.setPointerCapture(e.pointerId); };
+    const d = (e: PointerEvent) => { down = true; this.userTurned = true; x0 = e.clientX; this.canvas.setPointerCapture(e.pointerId); };
     const m = (e: PointerEvent) => { if (!down) return; this.tYaw += (e.clientX - x0) * 0.012; x0 = e.clientX; };
     const u = () => { down = false; };
     this.canvas.addEventListener('pointerdown', d); this.canvas.addEventListener('pointermove', m);
@@ -91,7 +92,7 @@ export class Preview {
   private frame(dt: number): void {
     this.yaw += (this.tYaw - this.yaw) * Math.min(1, dt * 10);
     this.zoom += (this.tZoom - this.zoom) * Math.min(1, dt * 6);
-    if (this.demo === 'idle' && Math.abs(this.tYaw - this.yaw) < 0.01) this.tYaw += dt * 0.15;
+    if (this.demo === 'idle' && !this.userTurned && Math.abs(this.tYaw - this.yaw) < 0.01) this.tYaw += dt * 0.15;
     const z = this.zoom, d = 6.2 - z * 4.8, ty = 0.98 + z * 0.72;
     this.cam.position.set(Math.sin(this.yaw) * d, ty + 0.15, Math.cos(this.yaw) * d);
     this.cam.lookAt(0, ty, 0);

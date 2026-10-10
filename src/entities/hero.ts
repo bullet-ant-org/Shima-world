@@ -144,6 +144,27 @@ export function faceTexture(spec: CharacterSpec): THREE.CanvasTexture {
   g.fillStyle = skinD; g.globalAlpha = 0.55;
   for (const sx of [-1, 1]) { g.beginPath(); g.ellipse(0.5 * S + sx * 6 * nw, ny + 2, 2.6 * ns * nw, 2 * ns, 0, 0, 7); g.fill(); }
   g.globalAlpha = 1;
+  // facial hair (painted in a darkened hair colour) and an optional scar over the left eye
+  const hairInk = '#' + new THREE.Color(spec.hair.color).lerp(new THREE.Color('#000000'), 0.25).getHexString();
+  if (f.beard > 0) {
+    const my0 = (0.8 + 0.03 * f.mouthHeight) * S, mw0 = 0.055 * S * f.mouthWidth;
+    const jaw = () => { g.beginPath(); g.moveTo(0.13 * S, 0.66 * S); g.quadraticCurveTo(0.16 * S, 0.94 * S, 0.5 * S, 1.02 * S); g.quadraticCurveTo(0.84 * S, 0.94 * S, 0.87 * S, 0.66 * S); g.lineTo(0.8 * S, 0.7 * S); g.quadraticCurveTo(0.72 * S, 0.86 * S, 0.5 * S, 0.88 * S); g.quadraticCurveTo(0.28 * S, 0.86 * S, 0.2 * S, 0.7 * S); g.closePath(); };
+    g.save();
+    if (f.beard === 1) { jaw(); g.clip(); g.fillStyle = hairInk; for (let i = 0; i < 900; i++) { const x = ((i * 7919) % 1000) / 1000, y = ((i * 104729) % 1000) / 1000; g.globalAlpha = 0.35; g.fillRect((0.1 + x * 0.8) * S, (0.55 + y * 0.47) * S, 2, 2); } }
+    else if (f.beard === 3) { jaw(); g.fillStyle = hairInk; g.globalAlpha = 0.85; g.fill(); g.beginPath(); g.moveTo(0.5 * S - mw0 * 1.3, my0 + 4); g.quadraticCurveTo(0.5 * S, my0 - 0.055 * S, 0.5 * S + mw0 * 1.3, my0 + 4); g.quadraticCurveTo(0.5 * S, my0 - 0.022 * S, 0.5 * S - mw0 * 1.3, my0 + 4); g.fill(); }
+    if (f.beard === 2 || f.beard === 4) {
+      g.fillStyle = hairInk; g.globalAlpha = 0.9;
+      g.beginPath(); g.moveTo(0.5 * S - mw0 * 1.25, my0 + 2); g.quadraticCurveTo(0.5 * S, my0 - 0.06 * S, 0.5 * S + mw0 * 1.25, my0 + 2); g.quadraticCurveTo(0.5 * S, my0 - 0.025 * S, 0.5 * S - mw0 * 1.25, my0 + 2); g.fill(); // moustache
+      if (f.beard === 2) { g.beginPath(); g.moveTo(0.5 * S - mw0 * 0.6, my0 + 0.035 * S); g.quadraticCurveTo(0.5 * S, my0 + 0.03 * S, 0.5 * S + mw0 * 0.6, my0 + 0.035 * S); g.lineTo(0.5 * S, 1.0 * S); g.closePath(); g.fill(); } // goatee
+    }
+    g.restore();
+  }
+  if (f.scar) {
+    const x = (0.5 + sep) * S + 10;
+    g.strokeStyle = 'rgba(150,60,70,0.85)'; g.lineWidth = 6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x - 22, cy - 95); g.lineTo(x + 18, cy + 70); g.stroke();
+    g.lineWidth = 3; for (let k = 0; k < 4; k++) { const t = 0.15 + k * 0.23, px = x - 22 + 40 * t, py = cy - 95 + 165 * t; g.beginPath(); g.moveTo(px - 9, py + 2); g.lineTo(px + 9, py - 2); g.stroke(); }
+  }
   // mouth
   const mx = 0.5 * S, my = (0.8 + 0.03 * f.mouthHeight) * S, mw = 0.055 * S * f.mouthWidth;
   if (f.lipAmt > 0 && f.mouth !== 2) { g.globalAlpha = f.lipAmt; g.fillStyle = f.lips; g.beginPath(); g.ellipse(mx, my + 5, mw * 0.7, 7, 0, 0, 7); g.fill(); g.globalAlpha = 1; }
@@ -173,6 +194,8 @@ export class Hero {
   private readonly rig = new THREE.Group();
   /** extra textures/geometries created for this hero, released by dispose() */
   private owned: { dispose(): void }[] = [];
+  /** 0 none, 1 katana at the waist, 2 back sword, 3 twin back swords (changes how the character runs) */
+  weapon = 0;
 
   constructor(assets: HeroAssets, spec: CharacterSpec = defaultSpec(), ink = true, detail = 1) {
     const prevDetail = setLoftDetail(detail);
@@ -218,11 +241,12 @@ export class Hero {
     };
 
     // ---- body proportions from gender + build ----
-    const shoulder = 0.2 + 0.035 * m + 0.012 * bd;
-    const chestRx = 0.148 + 0.032 * m + 0.02 * bd, chestRz = 0.102 + 0.016 * m + 0.012 * bd;
+    const sw = (spec.shoulders ?? 0.5) - 0.5;
+    const shoulder = 0.2 + 0.035 * m + 0.012 * bd + 0.035 * sw;
+    const chestRx = 0.148 + 0.032 * m + 0.02 * bd + 0.025 * sw, chestRz = 0.102 + 0.016 * m + 0.012 * bd;
     const waistRx = 0.108 + 0.036 * m + 0.026 * bd, waistRz = 0.088 + 0.014 * m + 0.012 * bd;
     const hipsRx = 0.152 + 0.022 * (1 - m) + 0.02 * bd, hipsRz = 0.108 + 0.01 * bd;
-    const limb = 0.94 + 0.12 * bd + 0.08 * m, bust = male ? 0 : 0.24;
+    const limb = 0.94 + 0.12 * bd + 0.08 * m, bust = male ? 0 : 0.1 + 0.3 * (spec.bust ?? 0.5);
     const coat = O.top !== 1, gloves = O.gloves;
     const sleeve = O.top === 1 ? C.skin : C.jacket, sleeveL = O.top === 1 ? C.skin : C.jacketL;
 
@@ -248,12 +272,14 @@ export class Hero {
     if (O.bottom === 0 && O.top !== 4) skirt(pel, pelIn, 0.1, -0.3, [waistRx + 0.03, waistRz + 0.03], [0.29, 0.26], 12, 0.05, C.jacketD, C.jacket, C.red, true);
     if (O.bottom === 3) skirt(pel, pelIn, 0.1, -0.52, [waistRx + 0.03, waistRz + 0.03], [0.33, 0.29], 6, 0.06, C.pants, shadeHex(O.pants, 0.8), C.gold, true);
     mesh(pel, lit, hip); mesh(pelIn, lit, hip, false);
-    if (O.katana) {
+    this.weapon = O.weapon ?? (O.katana ? 1 : 0);
+    if (this.weapon === 1) {
       const KX = -0.34, tilt = -0.62;
       const kg = (len: number, w: number, y: number, z: number, c: number, h = w) => { const g = new THREE.CylinderGeometry(w / 2, w / 2, len, 10); g.deleteAttribute('uv'); g.rotateX(PI / 2 + tilt); g.scale(1, h / w, 1); g.translate(KX, y, z); return paint(g, c); };
       mesh([kg(0.95, 0.05, -0.1, -0.2, 0x14121c), kg(0.03, 0.1, 0.19, 0.215, C.gold), kg(0.26, 0.042, 0.3, 0.37, 0x1d2142), kg(0.05, 0.058, -0.385, -0.585, C.red), kg(0.18, 0.062, -0.03, -0.12, C.red)], lit, hip);
       mesh([kg(0.7, 0.012, -0.08, -0.2, C.cyan)], glow, hip);
     }
+    // swords worn on the back are built on the spine below (they follow the torso)
 
     // =============================== torso ===============================
     const spine = pivot(hip, 0, 0.09, 0, SP);
@@ -293,6 +319,17 @@ export class Hero {
       torso.push(loft({ path: [tsurf(0.15, PI / 2, 0.004), tsurf(0.33, PI / 2, 0.006), tsurf(0.5, PI / 2, 0.005)], steps: 10, seg: 6, up: [0, 0, 1], r: () => [0.008, 0.004], color: C.gold }));
     }
     mesh(torso, lit, spine);
+    if (this.weapon >= 2) {
+      // diagonal back scabbard(s): hilt over the right shoulder (twin: crossed, second hilt over the left)
+      const blade = (sx: number) => {
+        const ang = sx * 0.62, ax = Math.sin(-ang), ay = Math.cos(ang); // axis pointing to the hilt (sx = 1: over the right shoulder, -x)
+        const seg = (len: number, w: number, at: number, c: number, sq = 1) => { const g = new THREE.CylinderGeometry(w / 2, w / 2, len, 10); g.deleteAttribute('uv'); g.scale(1, 1, sq); g.rotateZ(ang); g.translate(ax * at, 0.3 + ay * at, -tRz(0.3) - 0.06); return paint(g, c); };
+        return [seg(0.95, 0.055, 0, 0x14121c, 0.7), seg(0.035, 0.11, 0.49, C.gold), seg(0.27, 0.045, 0.64, 0x1d2142), seg(0.04, 0.06, 0.79, C.gold), seg(0.06, 0.06, -0.49, C.red, 0.7), seg(0.16, 0.062, 0.2, C.red, 0.75)];
+      };
+      const geos = blade(1); if (this.weapon === 3) geos.push(...blade(-1));
+      geos.push(loft({ path: [tsurf(0.52, PI / 2 + 0.9, 0.012), tsurf(0.3, PI / 2, 0.02), tsurf(0.12, PI / 2 - 0.9, 0.012)], steps: 10, seg: 6, r: () => [0.022, 0.006], color: 0x3a2418 })); // strap across the chest
+      mesh(geos, lit, spine);
+    }
     if (O.top === 0 || O.top === 2) { const p = tsurf(0.36, PI / 2, 0.012); mesh([E(0.026, 0.026, 0.008, p[0], p[1], p[2], C.cyan, 10)], glow, spine); }
 
     // =============================== head ===============================
@@ -305,6 +342,7 @@ export class Hero {
     const faceZ = keys([[0.03, 0], [0.034, 0.011], [0.045, 0.022], [0.065, 0.042], [0.09, 0.072], [0.12, 0.104], [0.15, 0.123], [0.2, 0.135], [crownC, 0.14]]);
     const dome = (y: number) => Math.sqrt(Math.max(0, 1 - ((y - crownC) / crownR) ** 2));
     const hx = (y: number) => (y > crownC ? 0.135 * wS * dome(y) : faceX(y)), hz = (y: number) => (y > crownC ? 0.14 * dome(y) : faceZ(y));
+    const LOWER = keys([[0.03, 0.04], [0.05, 0.054], [0.07, 0.046], [0.09, 0.042], [0.11, 0.032], [0.135, 0.016], [0.16, 0.004], [0.18, 0]]);
     const headShape = (_t: number, a: number, p: THREE.Vector3) => {
       const s = Math.sin(a), c = Math.cos(a), y = p.y;
       const jawK = 0.22 * (1 - smooth(0.08, 0.16, y));                                     // V-shaped chin seen from above
@@ -313,12 +351,17 @@ export class Hero {
       // jaw: the back half of the lower rings reaches toward the neck/ear, giving a real jawline and jaw angle in profile
       const jawZone = smooth(0.06, 0.1, y) * (1 - smooth(0.13, 0.17, y)), bs = Math.max(0, -s);
       const jawBack = (0.42 + 0.14 * F_.jaw) * c * c * (1 - smooth(-0.25, 0.45, s)) * jawZone + 0.12 * bs * jawZone; void bs;
-      const chin = 0.18 * Math.pow(Math.max(0, s), 4) * Math.exp(-(((y - 0.048) / 0.016) ** 2)); // the chin point juts forward a touch
-      return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack + chin;
+      const chin = 0.22 * Math.pow(Math.max(0, s), 4) * Math.exp(-(((y - 0.05) / 0.017) ** 2)); // rounded chin juts forward
+      // anime side view (absolute offsets on the front of the face): the lower face comes forward, the nose bridge slopes out
+      // from between the eyes to a pointed tip that clears the eye line, the mouth sits back under it, then the chin
+      const ny = 0.117 + 0.007 * F_.noseHeight, frontN = Math.exp(-((c / 0.16) ** 2)) * Math.max(0, s), frontW = Math.exp(-((c / 0.55) ** 2)) * Math.max(0, s);
+      const bridge = y >= ny ? Math.max(0, 1 - (y - ny) / 0.045) ** 1.5 : Math.exp(-(((y - ny) / 0.0075) ** 2));
+      const add = LOWER(y) * frontW + 0.03 * F_.noseSize * bridge * frontN + 0.004 * frontN * Math.exp(-(((y - (0.093 + 0.007 * F_.mouthHeight)) / 0.007) ** 2));
+      const nose = add / Math.max(0.02, hz(y)), lips = 0;
+      return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack + chin + nose + lips;
     };
-    const headG = loft({ path: [[0, 0.03, 0.042], [0, 0.07, 0.03], [0, 0.14, 0.008], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 36, seg: 28, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
+    const headG = loft({ path: [[0, 0.03, 0], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 52, seg: 32, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
     // front of the face at a given height (for placing the nose)
-    const frontZ = (yq: number) => { const P = headG.attributes.position; let best = 0, bd2 = 1e9; for (let i = 0; i < P.count; i++) { if (Math.abs(P.getX(i)) > 0.012 || P.getZ(i) < 0) continue; const d = Math.abs(P.getY(i) - yq); if (d < bd2) { bd2 = d; best = P.getZ(i); } } return best; };
     // painted face decal: the head's own front faces, lifted a hair along their normals, with planar UVs
     {
       const P = headG.attributes.position, Nn = headG.attributes.normal, I = headG.index!;
@@ -344,16 +387,9 @@ export class Hero {
       const fm = new THREE.MeshToonMaterial({ map: tex, transparent: true, gradientMap: assets.ramp, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
       const fmesh = new THREE.Mesh(g, fm); fmesh.renderOrder = 1; head.add(fmesh); this.owned.push(g, tex, fm);
     }
-    const headGeos: THREE.BufferGeometry[] = [headG], noseGeo: THREE.BufferGeometry[] = [];
+    const headGeos: THREE.BufferGeometry[] = [headG];
     // neck
     headGeos.push(loft({ path: [[0, -0.06, -0.008], [0, 0.1, 0.0]], steps: 4, seg: 14, r: () => 0.047 + 0.008 * m, color: vgrad(C.skinS, C.skin, -0.06, 0.1) }));
-    // sculpted nose
-    {
-      const ns = F_.noseSize, ny = 0.117 + 0.007 * F_.noseHeight;
-      noseGeo.push(loft({ path: [[0, ny + 0.026, frontZ(ny + 0.026) - 0.004], [0, ny + 0.006, frontZ(ny + 0.006) + 0.0032 * ns], [0, ny - 0.004, frontZ(ny - 0.004) + 0.0015]], steps: 8, seg: 10, up: [0, 0, 1],
-        r: (t) => { const k = ends(t, 0.35, 0.35); return [0.008 * F_.noseWidth * ns * k, 0.0055 * ns * k]; }, color: C.skin }));
-    }
-    mesh(noseGeo, lit, head, false);
     // ears
     const ens = F_.earSize, earX = 0.133 * wS - 0.006;
     if (F_.ears === 0) for (const sx of [-1, 1]) headGeos.push(loft({ path: [[sx * earX, 0.15, -0.01], [sx * (earX + 0.012), 0.205, -0.02]], steps: 8, seg: 10, r: (t) => { const k = ends(t, 0.4, 0.4); return [0.011 * ens * k, 0.024 * ens * k]; }, color: C.skin }));
@@ -364,6 +400,16 @@ export class Hero {
     }
     if (O.earrings) for (const sx of [-1, 1]) { const g = new THREE.TorusGeometry(0.017, 0.0035, 6, 16); g.deleteAttribute('uv'); g.rotateY(PI / 2); g.translate(sx * (earX + 0.008), 0.128, -0.012); headGeos.push(paint(g, C.gold)); }
 
+    if (F_.glasses) {
+      const gz = 0.148, gy = FY0 + FH * (0.5 - 0.04 * F_.eyeHeight), gx = FW * (0.2 + 0.05 * F_.eyeSpacing), R = 0.027 * F_.eyeSize, frame = F_.glasses === 3 ? 0x101014 : 0x2a2a34;
+      for (const sx of [-1, 1]) {
+        if (F_.glasses === 2) { for (const [w, h, dx, dy] of [[R * 2.2, 0.004, 0, R * 0.85], [R * 2.2, 0.004, 0, -R * 0.85], [0.004, R * 1.7, R * 1.1, 0], [0.004, R * 1.7, -R * 1.1, 0]]) headGeos.push(box(w, h, 0.004, sx * gx + dx, gy + dy, gz, frame)); }
+        else { const t = new THREE.TorusGeometry(R, F_.glasses === 3 ? 0.004 : 0.0026, 6, 24); t.deleteAttribute('uv'); t.translate(sx * gx, gy, gz); headGeos.push(paint(t, frame)); }
+        if (F_.glasses === 3) { const l = new THREE.CircleGeometry(R * 1.02, 20); l.deleteAttribute('uv'); l.translate(sx * gx, gy, gz + 0.001); headGeos.push(paint(l, 0x1a1c2c)); }
+        headGeos.push(box(0.006, 0.006, 0.15, sx * (gx + R * 1.08), gy + 0.004, gz - 0.075, frame));         // temple arm back to the ear
+      }
+      headGeos.push(box(gx * 2 - R * 2.1, 0.006, 0.006, 0, gy + R * 0.3, gz + 0.004, frame));              // bridge
+    }
     // ---- hair: a cap shell plus sculpted locks (flattened, tapered sweeps lying on the scalp) ----
     const HC = new THREE.Vector3(0, 0.245, -0.018), HR = 0.163, _o = new THREE.Vector3();
     const cHair = new THREE.Color(C.hair), cMid = new THREE.Color(C.hairM), cTip = new THREE.Color(C.hairTip), cSheen = new THREE.Color(C.hairL);
@@ -492,6 +538,36 @@ export class Hero {
         for (let i = 0; i < 5; i++) spike(1.05 + 0.18 * (i % 2), PI + (i - 2) * 0.5, 0.24 + 0.04 * (i % 2), 0.08, 0.12, 0.04);
         for (const sx of [-1, 1]) { spike(1.15, sx * 1.7, 0.25, 0.08, 0.15, 0.04); spike(1.55, sx * 2.3, 0.2, 0.07, -0.05, 0.02); spike(0.55, sx * 0.9, 0.16, 0.065, 0.3, 0.02); spike(0.6, sx * 2.6, 0.2, 0.07, 0.2, 0.03); }
         back(7, 1.9, 2 * PI - 1.9, 2.05, 0.04, { r1: 1.03, w: 0.06 });
+        break;
+      case 15: // Undercut: shaved sides, long top swept over to one side
+        cap(0.97, 0.97, 0.97);
+        for (let i = 0; i < 7; i++) lock({ ph: -0.55 + i * 0.16, th0: 0.9, th1: 1.55 + 0.04 * (i % 3), sweep: 0.75, r0: 0, w: 0.06, th: 0.022, r1: 1.12, curl: 0.01 } as Lock);
+        for (let i = 0; i < 6; i++) lock({ ph: PI - 0.6 + i * 0.24, th0: 1.3, th1: 0.15, r1: 1.08, w: 0.06, th: 0.022 });
+        break;
+      case 16: // Mohawk: a crest of spikes from brow to nape
+        cap(0.96, 0.96, 0.96);
+        for (let k = 0; k < 9; k++) { const t = -1.1 + (k / 8) * 2.2; spike(Math.abs(t) + 0.05, t >= 0 ? 0 : PI, 0.2 + 0.08 * (1 - Math.abs(t) / 1.1), 0.075, 0.7, -0.02); }
+        break;
+      case 17: // Man bun: slicked back with a knot at the crown
+        cap(); for (let i = 0; i < 8; i++) lock({ ph: -0.9 + i * 0.26, th0: 1.35, th1: -0.6, r1: 1.03, w: 0.055, th: 0.018 });
+        sides(1.7, 0.02, { w: 0.04 });
+        hairGeo.push(loft({ path: [[0, 0.355, -0.15], [0, 0.45, -0.18]], steps: 10, seg: 14, r: (t) => 0.06 * Math.sqrt(Math.max(0, 1 - (2 * t - 1) ** 2)) + 0.001, shape: (t, a) => 1 + 0.07 * Math.sin(a * 3 + t * 8), color: (t, _a, p, o) => hc(0.25 + 0.3 * t, p, o) }));
+        hairGeo.push(lathe(0.37, 0.35, () => 0.045, () => 0.045, C.band, { z: -0.152, seg: 12, steps: 2 }));
+        break;
+      case 18: // Afro: a big round cloud of curls
+        hv = 1.3;
+        hairGeo.push(loft({ path: [[0, 0.11, -0.04], [0, 0.5, -0.04]], steps: 22, seg: 32, r: (t) => { const e = Math.sqrt(Math.max(0, 1 - (2 * t - 1) ** 2)); return [0.215 * e + 0.001, 0.215 * e + 0.001]; },
+          shape: (t, a) => (1 + 0.05 * Math.sin(a * 11) * Math.sin(t * 19) + 0.04 * Math.sin(a * 7 + t * 13)) * (1 - 0.55 * Math.pow(Math.max(0, Math.sin(a)), 3) * (1 - smooth(0.45, 0.62, t))),
+          color: (t, _a, p, o) => hc(0.15 + 0.5 * (1 - t), p, o) }));
+        break;
+      case 19: // Buzz cut
+        cap(0.955, 0.95, 0.955); fringe(5, 0.5, 0.62, { w: 0.03, th: 0.008, r1: 1.0 });
+        break;
+      case 20: // Wolf cut: shaggy layers, short crown, longer flicked-out ends
+        cap(1.04); fringe(7, 0.62, 0.95, { w: 0.042, curl: 0.012 });
+        sides(1.85, 0.12, { curl: 0.025, out: 0.02 });
+        back(10, 1.3, 2 * PI - 1.3, 2.05, 0.14, { r1: 1.12, w: 0.065, curl: 0.03, out: 0.035 });
+        spike(0.35, 0.3, 0.1, 0.05, 0.2); spike(0.4, -0.5, 0.09, 0.05, 0.2); spike(0.6, PI, 0.11, 0.055, 0.1);
         break;
       default: // Hime cut
         cap(1.03); fringe(7, 0.6, 1.0, { blunt: true, w: 0.04, sweep: 0 }); sides(1.8, 0.12, { blunt: true, curl: 0, out: 0 });
@@ -673,6 +749,22 @@ export class Hero {
     S(a, ELL, (walk * elW(armL) + run * elR) * w - idle * 0.15, 0, 0);
     S(a, SHR, armR * sw - idle * 0.02 * breathe, -run * 0.15 * w, 0.08 + 0.05 * run + idle * 0.04);
     S(a, ELR, (walk * elW(armR) + run * elR) * w - idle * 0.15, 0, 0);
+    // weapon-specific running styles (blended in with the run)
+    if (this.weapon && run * w > 0.01) {
+      const k = run * w, J = (j: number, x: number, y: number, z: number) => { a[j * 3] += (x - a[j * 3]) * k; a[j * 3 + 1] += (y - a[j * 3 + 1]) * k; a[j * 3 + 2] += (z - a[j * 3 + 2]) * k; };
+      const bobA = 0.06 * Math.sin(u * 4 * PI);
+      if (this.weapon === 1) {
+        // samurai dash: one hand grips the scabbard at the hip, the other forearm raised across the face, deep forward lean
+        J(SHL, 0.35, 0.2, -0.4); J(ELL, -1.0, 0, 0);
+        J(SHR, -1.7 + bobA, -0.3, -0.45); J(ELR, -2.15, 0, 0);
+        J(SP, 0.55, a[SP * 3 + 1] * 0.5, a[SP * 3 + 2]); J(HD, -0.42, 0, 0);
+      } else {
+        // anime ninja run: chest low, arms swept straight back, head up
+        J(SHL, 1.3 + bobA, 0.1, -0.28); J(ELL, -0.1, 0, 0);
+        J(SHR, 1.3 + bobA, -0.1, 0.28); J(ELR, -0.1, 0, 0);
+        J(SP, 0.78, a[SP * 3 + 1] * 0.3, a[SP * 3 + 2] * 0.5); J(HD, -0.62, 0, 0);
+      }
+    }
     // secondary joints get their own motion targets (springs add the follow-through)
     const wag = 0.3 * Math.sin(c * 1.8), acc = clamp(-this.acc * 0.012, -0.4, 0.4), st = Math.sin(u * 2 * PI);
     S(a, S1, 0.16 + hs * 0.05 + acc, 0, 0.04 * Math.sin(c * 2.1)); S(a, S2, 0.08 + hs * 0.03 + acc * 0.7, 0, 0.08 * Math.sin(c * 2.7) * (0.4 + w));

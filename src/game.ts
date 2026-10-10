@@ -8,7 +8,7 @@ import { Sky } from './rendering/sky';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Herd } from './entities/horse';
 import { Grass } from './rendering/grass';
-import { PASTURES } from './world/layout';
+import { PASTURES, blockTop } from './world/layout';
 import { Input } from './core/input';
 import { Network } from './network/network';
 import { DynamicResolution, type DeviceProfile } from './core/device';
@@ -60,7 +60,7 @@ export class Game {
 
   gameTime = 17.2;            // hours, 0..24
   private camYaw = 0; private camPitch = 0.28;
-  camDist = 7.5; // third-person distance (raised by dev tooling for overview shots)
+  camDist = 3.4; // third-person distance (raised by dev tooling for overview shots)
   setCam(yaw: number, pitch: number): void { this.camYaw = yaw; this.camPitch = pitch; }
   private last = 0; private hudAcc = 0; private saveAcc = 0;
   private shadowsOn: boolean;
@@ -71,7 +71,7 @@ export class Game {
   private hud = document.getElementById('hud')!;
   private zoneEl = document.getElementById('zone')!;
   private lastZone = '';
-  private uiKey = -1; private glowQ = -1; private camD = 7.5;
+  private uiKey = -1; private glowQ = -1; private camD = 3.4;
   private trail = new Particles(260, 0.55); private spirits = new Particles(160, 1.3); private dust = new Particles(160, 1.1, -1.2, 0.97);
   private speedLines = new SpeedLines(); private hoverRing = new HoverRing();
   private speedEl = document.getElementById('speedfx')!;
@@ -303,19 +303,29 @@ export class Game {
 
   private updateCamera(dt: number): void {
     const P = this.player;
-    const ride = P.mount ? 1 : 0;
-    const d = this.camDist + (P.flying ? (P.boost ? 4.5 : 1.5) : 0) + ride * (2 + Math.min(3, P.hspeed * 0.15));
-    this.camD += (d - this.camD) * (1 - Math.exp(-dt * 4));
+    // GTA-style chase camera: close over the right shoulder on foot, pulled back for running / riding / flying
+    const ride = P.mount ? 1 : 0, run = !P.flying && !ride ? Math.min(1, P.hspeed / 7.8) : 0;
+    let d = this.camDist + run * 0.9 + (P.flying ? (P.boost ? 6 : 3) : 0) + ride * (2.4 + Math.min(3, P.hspeed * 0.15));
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    const tx = P.x + Math.sin(this.camYaw) * cp * this.camD, tz = P.z + Math.cos(this.camYaw) * cp * this.camD, ty = P.y + 2.2 + ride * 0.9 + sp * this.camD;
+    const sh = (P.flying ? 0.35 : 0.62) * (1 - ride * 0.5);                       // shoulder offset to the right
+    const rx = Math.cos(this.camYaw), rz = -Math.sin(this.camYaw);
+    const lookH = P.flying ? 1.1 : 1.55 + ride * 0.95;
+    const fx = P.x + rx * sh, fz = P.z + rz * sh, fy = P.y + lookH;
+    // pull in so walls / buildings never get between the camera and the character
+    for (let i = 1; i <= 6; i++) {
+      const t = (i / 6) * d, cx = fx + Math.sin(this.camYaw) * cp * t, cz = fz + Math.cos(this.camYaw) * cp * t, cy = fy + sp * t;
+      if (blockTop(cx, cz) > cy - 0.5) { d = Math.max(1.2, t - 0.6); break; }
+    }
+    this.camD += (d - this.camD) * (1 - Math.exp(-dt * (d < this.camD ? 12 : 4)));
+    const tx = fx + Math.sin(this.camYaw) * cp * this.camD, tz = fz + Math.cos(this.camYaw) * cp * this.camD, ty = fy + 0.25 + sp * this.camD;
     const k = 1 - Math.exp(-dt * (P.flying ? 9 : 14));
     const c = this.camera.position;
     c.x += (tx - c.x) * k; c.z += (tz - c.z) * k; c.y += (Math.max(ty, heightAt(c.x, c.z) + 1.2) - c.y) * k;
     // speed sells the motion: widen the field of view while flying, a lot while boosting
-    const fovT = P.flying ? Math.min(100, 68 + P.speed3 * 0.4) : 65 + ride * Math.min(12, P.hspeed * 0.6);
+    const fovT = P.flying ? Math.min(100, 70 + P.speed3 * 0.4) : 62 + run * 8 + ride * Math.min(12, P.hspeed * 0.6);
     this.camera.fov += (fovT - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.aspect = this.gr.aspect; this.camera.updateProjectionMatrix();
-    this.camera.lookAt(P.x, P.y + (P.flying ? 1.0 : 1.4 + ride * 0.9), P.z);
+    this.camera.lookAt(fx, fy, fz);
   }
 
   // ---------------- day/night + weather ----------------
