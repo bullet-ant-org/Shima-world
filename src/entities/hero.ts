@@ -370,7 +370,8 @@ export class Hero {
       const ny = 0.117 + 0.007 * F_.noseHeight, frontN = Math.exp(-((c / 0.16) ** 2)) * Math.max(0, s), frontW = Math.exp(-((c / 0.55) ** 2)) * Math.max(0, s);
       const bridge = y >= ny ? Math.max(0, 1 - (y - ny) / 0.045) ** 1.5 : Math.exp(-(((y - ny) / 0.0075) ** 2));
       const add = LOWER(y) * frontW + 0.03 * F_.noseSize * bridge * frontN + 0.004 * frontN * Math.exp(-(((y - (0.093 + 0.007 * F_.mouthHeight)) / 0.007) ** 2));
-      const nose = add / Math.max(0.02, hz(y)), lips = 0;
+      const chinF = (F_.chin ?? 0) * 0.026 * frontW * Math.exp(-(((y - 0.05) / 0.026) ** 2)); // chin slider: how far the chin comes forward
+      const nose = (add + chinF) / Math.max(0.02, hz(y)), lips = 0;
       return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack + chin + nose + lips;
     };
     const headG = loft({ path: [[0, 0.03, 0], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 52, seg: 32, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
