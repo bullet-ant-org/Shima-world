@@ -106,7 +106,12 @@ function catalog(): Record<Theme, BuildingSpec[]> & { low: BuildingSpec[] } {
 
 /** true when a rotated footprint touches no street / sidewalk and no sky-road deck runs below its roof */
 function footprintClear(x: number, z: number, ry: number, hw: number, hd: number, top: number): boolean {
-  const c = Math.cos(ry), sn = Math.sin(ry);
+  const c = Math.cos(ry), sn = Math.sin(ry), R = Math.max(hw, hd) + 6;
+  for (const d of PROPS.pylon ?? []) {                // sky-road columns
+    const dx = d.x - x, dz = d.z - z;
+    if (Math.abs(dx) > R || Math.abs(dz) > R) continue;
+    if (Math.abs(dx * c - dz * sn) < hw + 3 && Math.abs(dx * sn + dz * c) < hd + 3) return false;
+  }
   for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
     const lx = (i / 2) * (hw + 0.5), lz = (j / 2) * (hd + 0.5), px = x + lx * c + lz * sn, pz = z - lx * sn + lz * c;
     if (NET.edgeDist(px, pz, 24) < 0.3) return false;
@@ -305,8 +310,9 @@ function cityFurniture(): void {
       if (nearX(f.x, f.z) || !land(f.x, f.z, 1)) continue;
       const nx = -f.tz, nz = f.tx, off = p.width / 2 + 2.4;
       const x = f.x + nx * off * side, z = f.z + nz * off * side;
+      if (onCarriageway(x, z, 0.4)) { side = -side; continue; }
       prop('lamp', x, z, face(-nx * side, -nz * side));
-      if (rng() < 0.22) prop('bench', f.x + nx * (off + 1.2) * side, f.z + nz * (off + 1.2) * side, face(-nx * side, -nz * side));
+      if (rng() < 0.22 && !onCarriageway(f.x + nx * (off + 1.2) * side, f.z + nz * (off + 1.2) * side, 1.2)) prop('bench', f.x + nx * (off + 1.2) * side, f.z + nz * (off + 1.2) * side, face(-nx * side, -nz * side));
       side = -side;
     }
   }
@@ -483,9 +489,15 @@ function flat(x: number, z: number, r: number, minH = 3): boolean {
 }
 const awayFromPaths = (x: number, z: number, d: number) => { const n = NET.nearest(x, z, d); return !n; };
 
+/** true when anything within r metres of (x, z) is city carriageway (where cars drive) */
+function onCarriageway(x: number, z: number, r: number): boolean {
+  for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]]) if (NET.surfaceLift(x + dx, z + dz) === 0.12) return true;
+  return false;
+}
+
 function stallsAlong(p: Path, every: number, chance: number, rng: () => number): void {
   along(p, every, p.width / 2 + 3.2, 0.05, 0.95, (x, z, nx, nz) => {
-    if (rng() > chance || !flat(x, z, 3, 1.5) || !claim(x, z, 4)) return;
+    if (rng() > chance || !flat(x, z, 3, 1.5) || onCarriageway(x, z, 2) || !claim(x, z, 4)) return;
     prop('stall' + Math.floor(rng() * 4), x, z, face(-nx, -nz), 1);
   });
 }
@@ -606,9 +618,15 @@ function skyRoads(): void {
   const ax = AIRPORT.cx, az = AIRPORT.cz;
   skyPaths.push(NET.add('sky', 18, [[C.x + 459, C.z + 321, 95], [C.x + 680, C.z + 420, 90], [C.x + 900, C.z + 560, 80], [C.x + 1050, C.z + 690, 66], [C.x + 1130, C.z + 800, 46], [C.x + 1170, C.z + 890, 22], [ax - 505, az - 56, 6.5], [ax - 500, az - 50, 5.7]], 'city'));
   for (const p of skyPaths) {
-    for (let i = 4; i < p.n - 3; i += 11) {
+    for (let i0 = 4; i0 < p.n - 3; i0 += 11) {
+      // columns never stand in a carriageway: slide along the deck to the nearest clear ground (or leave a longer span)
+      let i = -1;
+      for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5]) { const j = i0 + k; if (j > 2 && j < p.n - 2 && !onCarriageway(p.x[j], p.z[j], 2.8)) { i = j; break; } }
+      if (i < 0) continue;
       const y = p.ys![i];
       if (y < 12) continue;
+      // a lower deck crossing underneath: the column would punch through it
+      if (skyPaths.some((q) => q !== p && Array.from(q.x).some((qx, k) => Math.hypot(qx - p.x[i], q.z[k] - p.z[i]) < q.width / 2 + 3 && q.ys![k] < y - 3))) continue;
       const g = Math.max(heightAt(p.x[i], p.z[i]), -8);
       prop('pylon', p.x[i], p.z[i], 0, 1, y - 1.7 - g);
     }
