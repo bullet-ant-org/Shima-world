@@ -545,6 +545,7 @@ export function hasBuildingDetail(spec: BuildingSpec): boolean { return cache.ha
 
 /** `detail` = near geometry (protruding windows etc); the far geometry is always built. Cached per spec. */
 /** designs with their own recognisable model (worth building up close even when detailed windows are off) */
+export const hasCustomModel = (spec: BuildingSpec) => !!CUSTOM[spec.tpl];
 export const isSignature = (spec: BuildingSpec) => !!CUSTOM[spec.tpl] && spec.tpl !== 'office' && spec.tpl !== 'machiya';
 
 export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null } {
@@ -731,26 +732,32 @@ export function komainuGeo(): Pair {
 
 /** Street lamp: pole, curved arm, lamp head; lights = bulb. */
 export function lampGeo(): Pair {
-  const m = new MB(), l = new MB(), c = hex(0x2f3340);
+  const m = new MB(), l = new MB(), c = hex(0x5a6170);
   m.cyl(0, 0, 0.32, 0.22, 0, 0.5, 8, c); m.cyl(0, 0, 0.14, 0.11, 0.5, 8.4, 8, c);
   m.box(0, 8.55, 1.05, 0.2, 0.2, 2.3, c); m.box(0, 8.3, 2.1, 0.9, 0.3, 1.0, shade(c, 1.3)); l.box(0, 8.12, 2.1, 0.65, 0.06, 0.7, hex(0xffe0a0));
   return done(m, l);
 }
 
-/** Traffic light: pole with arm and a 3-lamp head; `state` = which lamp is lit (0 red, 1 amber, 2 green). */
+/** Traffic light (Japanese style): slim grey pole and arm, horizontal 3-lamp heads with visors, a pedestrian signal on the pole. */
 export function trafficLightGeo(state: number): Pair {
-  const m = new MB(), l = new MB(), c = hex(0x2a2e38);
-  m.cyl(0, 0, 0.14, 0.14, 0, 5.4, 8, c); m.box(0, 5.4, 1.6, 0.18, 0.18, 3.2, c);
-  for (const z of [0.2, 3.1]) {
-    m.box(0, 5.2, z, 0.6, 1.6, 0.5, hex(0x1b1d24));
-    const cols = [hex(0xff2a2a), hex(0xffb020), hex(0x35ff7a)];
+  const m = new MB(), l = new MB(), c = hex(0x7d8390), dark = hex(0x3a3f4a);
+  m.cyl(0, 0, 0.11, 0.13, 0, 5.6, 8, c); m.cyl(0, 0, 0.2, 0.22, 0, 0.3, 8, dark);
+  m.box(0, 5.55, 1.65, 0.12, 0.12, 3.3, c); m.box(0, 5.3, 0.35, 0.06, 0.5, 0.06, c);
+  const cols = [hex(0xff3434), hex(0xffb428), hex(0x2dffb0)];
+  for (const z of [1.2, 3.1]) {
+    m.box(0, 5.35, z, 1.25, 0.42, 0.26, c);                      // housing
+    m.box(0, 5.35, z - 0.14, 1.32, 0.48, 0.03, dark);            // back plate
     for (let k = 0; k < 3; k++) {
-      const y = 5.65 - k * 0.5, g = (z > 1) === (state === 3) ? 0 : 0;
-      void g;
-      (k === state ? l : m).box(0, y, z + 0.27, 0.34, 0.34, 0.04, k === state ? cols[k] : shade(cols[k], 0.18), 1);
+      const x = -0.4 + k * 0.4;
+      (k === state ? l : m).box(x, 5.35, z + 0.135, 0.3, 0.3, 0.02, k === state ? cols[k] : shade(cols[k], 0.25), 1);
+      m.box(x, 5.53, z + 0.2, 0.34, 0.03, 0.14, c);               // visor
     }
   }
-  m.box(0, 3.2, 0.2, 0.5, 1.2, 0.2, c);
+  // pedestrian signal
+  m.box(0, 2.9, 0.2, 0.34, 0.6, 0.22, c);
+  const walk = state === 2;
+  l.box(0, walk ? 2.75 : 3.05, 0.315, 0.24, 0.24, 0.02, walk ? hex(0x5cf0ff) : hex(0xff4a3a), 1);
+  m.box(0, walk ? 3.05 : 2.75, 0.315, 0.24, 0.24, 0.02, dark, 1);
   return done(m, l);
 }
 

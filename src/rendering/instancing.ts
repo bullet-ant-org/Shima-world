@@ -88,6 +88,22 @@ export class InstancePool {
     this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor!.needsUpdate = true;
   }
 
+  private saved = new Map<number, Float32Array>();
+  /** temporarily collapse one instance (e.g. a far building while its detailed model stands in its place) */
+  hide(h: number): void {
+    if (this.saved.has(h)) return;
+    const a = this.mesh.instanceMatrix.array as Float32Array, o = this.handleSlot[h] * 16;
+    this.saved.set(h, a.slice(o, o + 16));
+    for (let i = 0; i < 12; i++) a[o + i] = 0;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+  show(h: number): void {
+    const m = this.saved.get(h); if (!m) return;
+    this.saved.delete(h);
+    (this.mesh.instanceMatrix.array as Float32Array).set(m, this.handleSlot[h] * 16);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
   flush(): void { this.mesh.instanceMatrix.needsUpdate = true; this.mesh.instanceColor!.needsUpdate = true; }
 }
 

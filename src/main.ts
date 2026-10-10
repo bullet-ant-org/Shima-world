@@ -42,7 +42,7 @@ async function startGame(): Promise<void> {
   const canvas = $('c') as HTMLCanvasElement;
   const save = await kvGet<SaveData>('save');
   game = new Game(canvas, profile);
-  if (dev) (window as unknown as { __game: Game }).__game = game;
+  if (dev) { (window as unknown as { __game: Game }).__game = game; void import('./world/layout').then((L) => { (window as unknown as { __layout: unknown }).__layout = L; }); }
   step(60, 'Building world…');
   const spec = normalize(await kvGet<CharacterSpec>('character').catch(() => null));
   await game.init(save, spec);

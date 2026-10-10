@@ -803,20 +803,19 @@ export class Hero {
     // arms counter the opposite leg; walk: loose and nearly straight, run: elbows ~90 deg pumping across the body
     const armL = R.t, armR = L.t;
     const sw = walk * 0.85 + run * 1.15;
-    const elW = (x: number) => -0.22 - 0.3 * Math.max(0, -x), elR = -1.5;
+    const elW = (x: number) => -0.22 - 0.3 * Math.max(0, -x), elRun = (x: number) => -1.35 - 0.45 * Math.max(0, -x) + 0.25 * Math.max(0, x);
     S(a, SHL, armL * sw - idle * 0.02 * breathe, run * 0.15 * w, -0.08 - 0.05 * run - idle * 0.04);
-    S(a, ELL, (walk * elW(armL) + run * elR) * w - idle * 0.15, 0, 0);
+    S(a, ELL, (walk * elW(armL) + run * elRun(armL)) * w - idle * 0.15, 0, 0);
     S(a, SHR, armR * sw - idle * 0.02 * breathe, -run * 0.15 * w, 0.08 + 0.05 * run + idle * 0.04);
-    S(a, ELR, (walk * elW(armR) + run * elR) * w - idle * 0.15, 0, 0);
+    S(a, ELR, (walk * elW(armR) + run * elRun(armR)) * w - idle * 0.15, 0, 0);
     // weapon-specific running styles (blended in with the run)
     if (this.weapon && run * w > 0.01) {
       const k = run * w, J = (j: number, x: number, y: number, z: number) => { a[j * 3] += (x - a[j * 3]) * k; a[j * 3 + 1] += (y - a[j * 3 + 1]) * k; a[j * 3 + 2] += (z - a[j * 3 + 2]) * k; };
       const bobA = 0.06 * Math.sin(u * 4 * PI);
       if (this.weapon === 1) {
-        // samurai dash: one hand grips the scabbard at the hip, the other forearm raised across the face, deep forward lean
+        // samurai dash: one hand steadies the scabbard at the hip, the free arm keeps pumping, forward lean
         J(SHL, 0.35, 0.2, -0.4); J(ELL, -1.0, 0, 0);
-        J(SHR, -1.7 + bobA, -0.3, -0.45); J(ELR, -2.15, 0, 0);
-        J(SP, 0.55, a[SP * 3 + 1] * 0.5, a[SP * 3 + 2]); J(HD, -0.42, 0, 0);
+        J(SP, 0.42, a[SP * 3 + 1] * 0.6, a[SP * 3 + 2]); J(HD, -0.32, 0, 0);
       } else {
         // anime ninja run: chest low, arms swept straight back, head up
         J(SHL, 1.3 + bobA, 0.1, -0.28); J(ELL, -0.1, 0, 0);

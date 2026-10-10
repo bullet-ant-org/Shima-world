@@ -2,6 +2,7 @@
  * World layout (pure data, no rendering): road/path networks, city lots and buildings, and every placed prop.
  * Deterministic: the same seeds always produce the same world.
  */
+import { type Shape, shapeTop } from './collide';
 import { PathNet, type Path } from './paths';
 import {
   AIRPORT, BRIDGES_Z, CHUNK, CITY_C, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, hash2, heightAt, island, mulberry32, noise2, riverX, slopeAt,
@@ -205,18 +206,40 @@ const PROP_SOLID: Record<string, [number, number, number, number]> = {
   stall0: [1.9, -1.2, 1.2, 3.2], stall1: [1.9, -1.2, 1.2, 3.2], stall2: [1.9, -1.2, 1.2, 3.2], stall3: [1.9, -1.2, 1.2, 3.2],
   haystack: [1.5, -1.5, 1.5, 2.7], greatTree: [2.2, -2.2, 2.2, 30], komainu: [0.9, -1.2, 1.2, 2.4], toroBig: [1, -1, 1, 3.5],
 };
-interface Solid { x: number; z: number; c: number; s: number; hw: number; z0: number; z1: number; top: number }
+interface Solid { x: number; z: number; c: number; s: number; hw: number; z0: number; z1: number; top: number; base: number; sc: number; shape: Shape | null }
 let solidGrid: Map<string, Solid[]> | null = null;
+
+/** Collision shapes traced from the real meshes (registered by the renderer, see collide.ts). Without them the hand-measured boxes are used. */
+type PropShapes = (kind: string) => Shape | null;
+type BuildingShape = (spec: BuildingSpec) => { shape: Shape; scale: number } | null;
+let propShape: PropShapes | null = null, buildingShape: BuildingShape | null = null;
+export function setCollisionShapes(props: PropShapes, buildings: BuildingShape): void { propShape = props; buildingShape = buildings; solidGrid = null; }
+
 function solids(): Map<string, Solid[]> {
   if (solidGrid) return solidGrid;
   solidGrid = new Map();
-  for (const [k, [hw, z0, z1, h]] of Object.entries(PROP_SOLID)) for (const d of PROPS[k] ?? []) {
-    const o: Solid = { x: d.x, z: d.z, c: Math.cos(d.ry), s: Math.sin(d.ry), hw: hw * d.s, z0: z0 * d.s, z1: z1 * d.s, top: heightAt(d.x, d.z) + h * d.s };
-    const r = Math.max(o.hw, -o.z0, o.z1);
-    for (let i = Math.floor((d.x - r) / 32); i <= Math.floor((d.x + r) / 32); i++) for (let j = Math.floor((d.z - r) / 32); j <= Math.floor((d.z + r) / 32); j++) {
-      const key = i + ',' + j; (solidGrid.get(key) ?? solidGrid.set(key, []).get(key)!).push(o);
+  const add = (o: Solid, r: number) => {
+    for (let i = Math.floor((o.x - r) / 32); i <= Math.floor((o.x + r) / 32); i++) for (let j = Math.floor((o.z - r) / 32); j <= Math.floor((o.z + r) / 32); j++) {
+      const key = i + ',' + j; (solidGrid!.get(key) ?? solidGrid!.set(key, []).get(key)!).push(o);
+    }
+  };
+  for (const [k, defs] of Object.entries(PROPS)) {
+    const shape = propShape?.(k) ?? null, box = PROP_SOLID[k];
+    if (!shape && !box) continue;
+    for (const d of defs) {
+      const base = heightAt(d.x, d.z);
+      if (shape) {
+        const r = Math.max(Math.abs(shape.x0), Math.abs(shape.z0), Math.abs(shape.x0 + shape.nx * shape.res), Math.abs(shape.z0 + shape.nz * shape.res)) * d.s;
+        add({ x: d.x, z: d.z, c: Math.cos(d.ry), s: Math.sin(d.ry), hw: 0, z0: 0, z1: 0, top: 0, base, sc: d.s, shape }, r);
+      } else {
+        const [hw, z0, z1, h] = box;
+        const o: Solid = { x: d.x, z: d.z, c: Math.cos(d.ry), s: Math.sin(d.ry), hw: hw * d.s, z0: z0 * d.s, z1: z1 * d.s, top: base + h * d.s, base, sc: d.s, shape: null };
+        add(o, Math.max(o.hw, -o.z0, o.z1));
+      }
     }
   }
+  // sky-road support columns
+  for (const d of PROPS.pylon ?? []) add({ x: d.x, z: d.z, c: 1, s: 0, hw: 1.9, z0: -1.9, z1: 1.9, top: heightAt(d.x, d.z) + (d.v ?? 20), base: 0, sc: 1, shape: null }, 2.5);
   return solidGrid;
 }
 
@@ -224,6 +247,7 @@ function solids(): Map<string, Solid[]> {
 export function blockTop(x: number, z: number): number {
   for (const o of solids().get(Math.floor(x / 32) + ',' + Math.floor(z / 32)) ?? []) {
     const dx = x - o.x, dz = z - o.z, lx = dx * o.c - dz * o.s, lz = dx * o.s + dz * o.c;
+    if (o.shape) { const t = shapeTop(o.shape, lx / o.sc, lz / o.sc); if (t > -Infinity) return o.base + t * o.sc; continue; }
     if (Math.abs(lx) < o.hw && lz > o.z0 && lz < o.z1) return o.top;
   }
   if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < SPIRE.r) return 3 + SPIRE.h;
@@ -235,6 +259,8 @@ export function blockTop(x: number, z: number): number {
       if (Math.abs(dx) > 70 || Math.abs(dz) > 70) continue;
       const c = Math.cos(b.ry), s = Math.sin(b.ry);
       const lx = dx * c - dz * s, lz = dx * s + dz * c; // into building-local space (x = width)
+      const bs = buildingShape?.(b.spec);
+      if (bs) { const t = shapeTop(bs.shape, lx / bs.scale, lz / bs.scale); if (t > -Infinity) return 3 + t; continue; }
       if (inside(b, lx, lz)) return b.top;
     }
   }

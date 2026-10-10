@@ -1,13 +1,15 @@
 /** World engine: chunk streaming with rings, per-ring detail, instanced props, curved path ribbons, city buildings with near/far LOD. */
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
-import { InstancePools, type PoolEntry } from '../rendering/instancing';
+import { InstancePools, type InstancePool, type PoolEntry } from '../rendering/instancing';
 import type { OutlineSpec } from '../rendering/outline';
 import {
-  benchGeo, barnGeo, isSignature, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
+  benchGeo, barnGeo, isSignature, hasCustomModel, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
-import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked } from './layout';
+import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, setCollisionShapes, type Building } from './layout';
+import { type Shape, rasterize } from './collide';
+import type { BuildingSpec } from '../rendering/geo';
 import {
   CHUNK, GOD, HILL, ISLANDS, LAKE, RICE, SPIRE, VOLCANO, heightAt, island, islandAt, lavaAt, mulberry32, noise2, riverX, sstep, type IslandId,
 } from './terrain';
@@ -56,7 +58,7 @@ class Batch {
   }
 }
 
-interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; inst: PoolEntry[]; border?: THREE.LineLoop; pending: boolean }
+interface ChunkRec { cx: number; cz: number; ring: number; group: THREE.Group; inst: PoolEntry[]; hide: Building[]; border?: THREE.LineLoop; pending: boolean }
 
 const NEON = [0xff3d9a, 0x25e6ff, 0xffb02e, 0x9a6bff].map((h) => new THREE.Color(h));
 const TMP = new THREE.Color();
@@ -105,6 +107,7 @@ export class World {
     this.buildPillars();
     this.buildLandmarks();
     this.buildProps();
+    this.registerColliders();
   }
 
   // ---- extreme distance: one coarse terrain mesh per island (sits 5 m under the streamed chunks) + the tall towers as silhouettes ----
@@ -141,6 +144,7 @@ export class World {
     for (const b of BUILDINGS) {
       const one = new Batch(); one.add(b.x, 3, b.z, b.ry, 0.965, 0.99, 0.965);
       one.commit(this.pools, buildingGeo(b.spec, false).lit, this.assets.building, false, this.resident);
+      const e = this.resident[this.resident.length - 1]; this.farOf.set(b, { pool: e.pool, h: e.handles[0] });
     }
   }
 
@@ -176,6 +180,7 @@ export class World {
       }
       const m = make[kind]; if (!m) continue;
       const pair = m.f(), bl = new Batch(), bg = new Batch();
+      if (!kind.startsWith('field')) this.propGeo.set(kind, pair.lit);
       for (const d of defs) {
         const y = heightAt(d.x, d.z);
         bl.add(d.x, y, d.z, d.ry, d.s, d.s, d.s);
@@ -185,6 +190,26 @@ export class World {
       bl.commit(this.pools, pair.lit, A.props, m.cast, this.resident, inked ? { geo: pair.lit, width: kind === 'greatTree' ? 0.12 : 0.05 } : null);
       if (pair.lights) bg.commit(this.pools, pair.lights, A.lights, false, this.resident);
     }
+  }
+
+  /** colliders traced from the meshes themselves (props once, buildings lazily; upgraded when a design's detailed model exists) */
+  private propGeo = new Map<string, THREE.BufferGeometry>();
+  private farOf = new Map<Building, { pool: InstancePool; h: number }>();
+  private chunkHide: Building[] = [];
+  private registerColliders(): void {
+    const props = new Map<string, Shape | null>();
+    const bcache = new Map<BuildingSpec, { shape: Shape; scale: number; detail: boolean }>();
+    setCollisionShapes(
+      (kind) => { if (!props.has(kind)) { const g = this.propGeo.get(kind); props.set(kind, g ? rasterize(g, kind === 'temple' || kind === 'terminal' || kind === 'hangar' ? 0.75 : 0.35) : null); } return props.get(kind)!; },
+      (spec) => {
+        const want = (this.nearDetail || isSignature(spec)) && hasBuildingDetail(spec);
+        const hit = bcache.get(spec);
+        if (hit && (hit.detail || !want)) return hit;
+        const shape = rasterize(buildingGeo(spec, want).lit, 0.5), o = { shape, scale: want ? 1 : 0.965, detail: want };
+        bcache.set(spec, o);
+        return o;
+      },
+    );
   }
 
   private pillarGeo(h: number, rTop: number, rBot: number, radial: number, rows: number, erode: number, seed: number): THREE.BufferGeometry {
@@ -380,7 +405,8 @@ export class World {
     if (maxH < -3) { this.empty.add(k); return; }
     const inst: PoolEntry[] = [];
     this.missed = 0;
-    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring, inst), inst, pending: false };
+    this.chunkHide = [];
+    const rec: ChunkRec = { cx, cz, ring, group: this.buildChunk(cx, cz, ring, inst), inst, hide: this.chunkHide, pending: false };
     rec.pending = this.missed > 0;
     if (this.debugBorders) this.addBorder(rec);
     this.group.add(rec.group);
@@ -390,6 +416,7 @@ export class World {
   private dispose(rec: ChunkRec): void {
     this.group.remove(rec.group);
     for (const e of rec.inst) e.pool.remove(e.handles);
+    for (const b of rec.hide) { const f = this.farOf.get(b); if (f) f.pool.show(f.h); }
     rec.group.traverse((o) => {
       if (o.userData.ownGeo) (o as THREE.Mesh).geometry.dispose();
     });
@@ -626,7 +653,9 @@ export class World {
           if (!this.nearDetail && !isSignature(b.spec)) continue;
           if (!hasBuildingDetail(b.spec)) { if (built >= 1) { this.missed++; continue; } built++; }
           const g = buildingGeo(b.spec, true), one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
-          one.commit(this.pools, g.lit, A.props, true, inst, this.outlines ? { geo: buildingGeo(b.spec, false).lit, width: 0.12 } : null);
+          // custom designs differ from their far block, so they are inked with nothing rather than a mismatched hull
+          one.commit(this.pools, g.lit, A.props, true, inst, this.outlines && !hasCustomModel(b.spec) ? { geo: buildingGeo(b.spec, false).lit, width: 0.12 } : null);
+          const far = this.farOf.get(b); if (far) { far.pool.hide(far.h); this.chunkHide.push(b); }   // the far block would poke through
           if (g.lights) { const l = new Batch(); l.add(b.x, 3, b.z, b.ry, 1, 1, 1); put(l, g.lights, A.lights); }
         }
       }
