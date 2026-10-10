@@ -5,7 +5,7 @@
 import { type Shape, shapeTop } from './collide';
 import { PathNet, type Path } from './paths';
 import {
-  AIRPORT, BRIDGES_Z, CHUNK, CITY_C, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, hash2, heightAt, island, mulberry32, noise2, riverX, slopeAt,
+  AIRPORT, BRIDGES_Z, CHUNK, FLATS, CITY_C, GOD, HILL, LAKE, RICE, SPIRE, VOLCANO, hash2, heightAt, island, mulberry32, noise2, riverX, slopeAt,
 } from './terrain';
 import type { BuildingSpec, Tpl } from '../rendering/geo';
 
@@ -278,6 +278,7 @@ const COVER: Record<string, number> = { house0: 8, house1: 9, house2: 8, cabin0:
 let coverGrid: Map<string, { x: number; z: number; r: number }[]> | null = null;
 /** true where a building / field / stall sits */
 export function covered(x: number, z: number): boolean {
+  if (courseDist(x, z) < 9.5) return true;   // racetrack dirt and rails
   if (!coverGrid) {
     coverGrid = new Map();
     for (const [k, r] of Object.entries(COVER)) for (const d of PROPS[k] ?? []) {
@@ -472,12 +473,46 @@ function islets(): void {
 // lanes, and roadside stalls along the paths. Pastures are where horses graze.
 // ---------------------------------------------------------------------------------------------------------------------
 export const PASTURES: { x: number; z: number; r: number }[] = [];
+
+/** the valley racecourse: an oval (straights along local x, turns of radius R at x = +-L/2), track width W */
+export interface Course { x: number; z: number; ry: number; L: number; R: number; W: number }
+export let RACECOURSE: Course | null = null;
+/** point + heading on the course centre line at distance s (wraps), with a lateral offset (+ = outside) */
+export function courseAt(c: Course, s: number, off = 0): { x: number; z: number; yaw: number } {
+  const P = 2 * c.L + 2 * Math.PI * c.R; s = ((s % P) + P) % P;
+  let lx: number, lz: number, tx: number, tz: number;
+  if (s < c.L) { lx = -c.L / 2 + s; lz = -c.R; tx = 1; tz = 0; lz -= off; }
+  else if (s < c.L + Math.PI * c.R) { const a = -Math.PI / 2 + (s - c.L) / c.R; const r = c.R + off; lx = c.L / 2 + Math.cos(a) * r; lz = Math.sin(a) * r; tx = -Math.sin(a); tz = Math.cos(a); }
+  else if (s < 2 * c.L + Math.PI * c.R) { lx = c.L / 2 - (s - c.L - Math.PI * c.R); lz = c.R + off; tx = -1; tz = 0; }
+  else { const a = Math.PI / 2 + (s - 2 * c.L - Math.PI * c.R) / c.R; const r = c.R + off; lx = -c.L / 2 + Math.cos(a) * r; lz = Math.sin(a) * r; tx = -Math.sin(a); tz = Math.cos(a); }
+  const cs = Math.cos(c.ry), sn = Math.sin(c.ry);
+  return { x: c.x + lx * cs + lz * sn, z: c.z - lx * sn + lz * cs, yaw: Math.atan2(tx * cs + tz * sn, -tx * sn + tz * cs) };
+}
+/** distance from the course centre line (Infinity when there is no course) */
+/** inside the course grounds (track, infield, stands) with a margin */
+export function inCourseArea(x: number, z: number, margin = 0): boolean {
+  const c = RACECOURSE; if (!c) return false;
+  const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry), lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+  return Math.hypot(Math.max(0, Math.abs(lx) - c.L / 2), lz) < c.R + c.W / 2 + 18 + margin;
+}
+export function courseDist(x: number, z: number): number {
+  const c = RACECOURSE; if (!c) return Infinity;
+  const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry), lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+  const ex = Math.max(0, Math.abs(lx) - c.L / 2);
+  return Math.abs(Math.hypot(ex, lz) - c.R);
+}
 const occ = new Set<string>();
 const OCC = 10;
 function claim(x: number, z: number, r: number): boolean {
   const c0 = Math.floor((x - r) / OCC), c1 = Math.floor((x + r) / OCC), d0 = Math.floor((z - r) / OCC), d1 = Math.floor((z + r) / OCC);
   for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) if (occ.has(i + ',' + j)) return false;
   for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) occ.add(i + ',' + j);
+  return true;
+}
+/** true when nothing has claimed this circle yet (does not claim it) */
+function free(x: number, z: number, r: number): boolean {
+  const c0 = Math.floor((x - r) / OCC), c1 = Math.floor((x + r) / OCC), d0 = Math.floor((z - r) / OCC), d1 = Math.floor((z + r) / OCC);
+  for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) if (occ.has(i + ',' + j)) return false;
   return true;
 }
 /** flat enough for a footprint of radius r */
@@ -503,7 +538,7 @@ function stallsAlong(p: Path, every: number, chance: number, rng: () => number):
 }
 
 function farmPlot(x: number, z: number, ry: number, rng: () => number): boolean {
-  if (!flat(x, z, 12) || Math.abs(x - riverX(z)) < 45 || !awayFromPaths(x, z, 14) || !claim(x, z, 13)) return false;
+  if (inCourseArea(x, z, 20) || !flat(x, z, 12) || Math.abs(x - riverX(z)) < 45 || !awayFromPaths(x, z, 14) || !claim(x, z, 13)) return false;
   prop('field' + Math.floor(rng() * 4), x, z, ry, 1);
   const c = Math.cos(ry), s = Math.sin(ry);
   // fence the long sides, leave the ends open
@@ -515,7 +550,8 @@ function farmPlot(x: number, z: number, ry: number, rng: () => number): boolean 
   return true;
 }
 
-function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: number } | null, rng: () => number, snow = false): void {
+function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: number } | null, rng: () => number, snow = false): boolean {
+  if (inCourseArea(cx, cz, 40)) return false;
   if (link) {
     // join the closest point of the existing network (not the village centre), so lanes branch off instead of fanning out
     let jx = link.x, jz = link.z, best = Infinity;
@@ -525,6 +561,7 @@ function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: numbe
     }
     const dx = cx - jx, dz = cz - jz, L = Math.hypot(dx, dz) || 1, bend = (rng() - 0.5) * Math.min(60, L * 0.25);
     const mx = jx + dx * 0.5 - (dz / L) * bend, mz = jz + dz * 0.5 + (dx / L) * bend;
+    for (let k = 0; k <= 24; k++) { const t = k / 24, u = 1 - t, qx = u * u * jx + 2 * u * t * mx + t * t * cx, qz = u * u * jz + 2 * u * t * mz + t * t * cz; if (inCourseArea(qx, qz, 6)) return false; } // lanes never cross the racecourse
     const lane = stoneAt([[jx, jz], [mx, mz], [cx - (dx / L) * 14, cz - (dz / L) * 14]], 5, isl);
     stallsAlong(lane, 70, 0.35, rng);
   }
@@ -537,7 +574,7 @@ function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: numbe
     prop((snow ? 'cabin' : 'house') + Math.floor(rng() * 3), x, z, face(cx - x, cz - z), 0.9 + rng() * 0.2);
   }
   for (let i = 0; i < 2; i++) { const a = rng() * TAU, x = cx + Math.cos(a) * 12, z = cz + Math.sin(a) * 12; if (flat(x, z, 3) && claim(x, z, 3.5)) prop('stall' + Math.floor(rng() * 4), x, z, face(cx - x, cz - z), 1); }
-  if (snow) return;
+  if (snow) return true;
   // barn + haystacks
   for (let tries = 0; tries < 6; tries++) {
     const a = rng() * TAU, x = cx + Math.cos(a) * 62, z = cz + Math.sin(a) * 62;
@@ -552,6 +589,7 @@ function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: numbe
     const a = rng() * TAU, r = 80 + rng() * 70, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
     farmPlot(x, z, a + (rng() < 0.5 ? 0 : Math.PI / 2), rng);
   }
+  return true;
   // fenced pasture for horses
   for (let tries = 0; tries < 8; tries++) {
     const a = rng() * TAU, r = 95 + rng() * 40, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
@@ -570,6 +608,30 @@ function countryside(): void {
   for (const k of ['house0', 'house1', 'house2', 'cabin0', 'cabin1', 'cabin2', 'temple', 'shrine', 'greatTree', 'pagodaIce']) for (const d of PROPS[k] ?? []) claim(d.x, d.z, 9);
   // stalls along the valley's paths
   for (const p of NET.paths) if (p.island === 'valley' || p.island === 'snow') stallsAlong(p, 55, 0.3, rng);
+  // the racecourse: a flat stretch of the valley for an oval track, grandstand and paddock
+  let bestC: Course | null = null, bestScore = 1e9;
+  for (let tries = 0; tries < 5000; tries++) {
+    const x = v.cx + (rng() - 0.5) * v.rx * 1.4, z = v.cz + (rng() - 0.5) * v.rz * 1.4, ry = rng() * Math.PI;
+    if (Math.hypot(x - VC.x, z - VC.z) < 220) continue;
+    const c: Course = { x, z, ry, L: 140, R: 40, W: 14 };
+    let lo = 1e9, hi = -1e9, ok = true;
+    for (let k = 0; k < 48 && ok; k++) for (const off of [-30, -22, 0, c.W / 2 + 14, c.W / 2 + 34]) {
+      const p = courseAt(c, (k / 48) * (2 * c.L + 2 * Math.PI * c.R), off), h = heightAt(p.x, p.z);
+      lo = Math.min(lo, h); hi = Math.max(hi, h);
+      if (h < 3 || Math.abs(p.x - riverX(p.z)) < 40 || NET.nearest(p.x, p.z, 8) || (Math.abs(off) < 25 && !free(p.x, p.z, 7))) { ok = false; break; }
+    }
+    if (!ok || hi - lo > 40) continue;
+    if (hi - lo < bestScore) { bestScore = hi - lo; bestC = c; }
+    if (bestScore < 6) break;
+  }
+  if (bestC) {
+    const c = bestC, x = c.x, z = c.z;
+    RACECOURSE = c;
+    let sum = 0; for (let k = 0; k < 48; k++) { const p = courseAt(c, (k / 48) * (2 * c.L + 2 * Math.PI * c.R)); sum += heightAt(p.x, p.z); }
+    FLATS.push({ x, z, c: Math.cos(c.ry), s: Math.sin(c.ry), L: c.L, R: c.R + c.W / 2 + 22, h: sum / 48 + 0.3, blend: 34 });
+    for (let k = 0; k < 48; k++) for (const off of [-22, 0, c.W / 2 + 14]) { const p = courseAt(c, (k / 48) * (2 * c.L + 2 * Math.PI * c.R), off); claim(p.x, p.z, 10); }
+    claim(x, z, 30);
+  }
   // the home village's own fields + pasture right by the spawn
   for (let i = 0; i < 60; i++) { const a = rng() * TAU, r = 190 + rng() * 220; farmPlot(VC.x + Math.cos(a) * r, VC.z + Math.sin(a) * r * 0.85, a, rng); }
   for (let tries = 0; tries < 80 && !PASTURES.length; tries++) {
@@ -583,14 +645,14 @@ function countryside(): void {
   for (let tries = 0; tries < 160 && made < 6; tries++) {
     const x = v.cx + (rng() - 0.5) * v.rx * 1.5, z = v.cz + (rng() - 0.5) * v.rz * 1.5;
     if (Math.hypot(x - VC.x, z - VC.z) < 330 || Math.abs(x - riverX(z)) < 70 || !flat(x, z, 12) || slopeAt(x, z) > 0.35) continue;
-    hamlet(x, z, 'valley', VC, rng); made++;
+    if (hamlet(x, z, 'valley', VC, rng)) made++;
   }
   // snow hamlets
   const sn = island('snow'); made = 0;
   for (let tries = 0; tries < 120 && made < 2; tries++) {
     const x = sn.cx + (rng() - 0.5) * sn.rx * 1.3, z = sn.cz + (rng() - 0.5) * sn.rz * 1.3;
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 120 || !flat(x, z, 16)) continue;
-    hamlet(x, z, 'snow', null, rng, true); made++;
+    if (hamlet(x, z, 'snow', null, rng, true)) made++;
   }
   // city: food stalls (yatai) on the wider streets
   for (const p of cityPaths) if (p.kind === 'street') stallsAlong(p, 90, 0.12, rng);

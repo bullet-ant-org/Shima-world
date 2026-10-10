@@ -28,7 +28,9 @@ type Part = 'body' | 'neck' | 'head' | 'tail' | 'fu' | 'fl' | 'hu' | 'hl';
 const cache = new Map<number, Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }>>();
 
 const FRONT = { y: 1.08, z: 0.5 }, HIND = { y: 1.12, z: -0.58 }, LEG_X = 0.18, UPPER = 0.5;
-export const SEAT_Y = 1.58;
+/** horses are drawn this much larger than the model's native size */
+export const HORSE_SCALE = 1.32;
+export const SEAT_Y = 1.58 * HORSE_SCALE;
 
 function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }> {
   const hit = cache.get(coat); if (hit) return hit;
@@ -135,6 +137,7 @@ export class Horse {
       const o = new THREE.Mesh(P[k].hull, outlineMat(0.012)); parent.add(o); this.inks.push(o);
     };
     this.root.add(this.bodyG);
+    this.root.scale.setScalar(HORSE_SCALE);
     add('body', this.bodyG);
     this.neck = new THREE.Group(); this.neck.position.set(0, 1.38, 0.62); this.bodyG.add(this.neck); add('neck', this.neck);
     this.head = new THREE.Group(); this.head.position.set(0, 0.45, 0.33); this.neck.add(this.head); add('head', this.head);
@@ -185,7 +188,7 @@ export class Horse {
   animate(dt: number): void {
     this.clock += dt;
     const sp = this.speed, c = this.clock;
-    const stride = 1.7 + sp * 0.16;
+    const stride = (1.7 + sp * 0.16) * HORSE_SCALE;
     this.phase += dt * (sp / stride) * PI * 2;
     const walk = 1 - smoothT(2.4, 4.2, sp), gallop = smoothT(8, 11, sp), trot = Math.max(0, 1 - walk - gallop);
     const move = smoothT(0.15, 0.9, sp);

@@ -206,7 +206,7 @@ interface Agent {
   slot: number; act: Act;
   x: number; z: number; y: number; yaw: number; sc: number;
   path: Path | null; i: number; s: number; dir: number; side: number; off: number; speed: number; lift: number; cool: number;
-  ph: number; look: number; phone: boolean; acc: number; gx: number; gz: number; leaving: number;
+  ph: number; look: number; phone: boolean; acc: number; gx: number; gz: number; leaving: number; tag?: string;
 }
 
 const WALK_KINDS = ['avenue', 'street', 'stone'];
@@ -276,14 +276,14 @@ export class Townsfolk {
   }
 
   /** a person placed by hand (shopkeepers, diners...) at an absolute height; returns false when the pool is exhausted */
-  pin(x: number, y: number, z: number, yaw: number, act: Act, v = -1, lift = 0): boolean {
+  pin(x: number, y: number, z: number, yaw: number, act: Act, v = -1, lift = 0, tag = 'room'): boolean {
     const vv = v >= 0 ? v : this.rnd() < 0.5 ? 0 : 1;
     const a = this.take(vv) ?? this.take(vv === 2 ? 0 : 1 - vv); if (!a) return false;
-    a.slot = PINNED; a.act = act; a.path = null; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.lift = lift;
+    a.slot = PINNED; a.act = act; a.path = null; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.lift = lift; a.tag = tag;
     if (act === Act.Sit) a.sc = Math.max(a.sc, 0.93);
     return true;
   }
-  unpinAll(): void { for (const a of this.ag) if (a.on && a.slot === PINNED) this.release(a); }
+  unpinAll(tag = 'room'): void { for (const a of this.ag) if (a.on && a.slot === PINNED && a.tag === tag) this.release(a); }
 
   /** put a walker on the nearest walkable path around (x, z) */
   private toPath(a: Agent, x: number, z: number, r = 40): boolean {

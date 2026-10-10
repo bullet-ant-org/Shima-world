@@ -7,6 +7,7 @@ import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
 import { Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Townsfolk } from './entities/npcs';
+import { Racecourse } from './entities/racing';
 import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
 import { Hud, type Stats } from './ui/hud';
 import { Herd } from './entities/horse';
@@ -47,6 +48,7 @@ export class Game {
   private grass: Grass | null = null;
   private grassGood = 0;
   private npc!: Townsfolk;
+  private races!: Racecourse;
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
   private camSnap = false;
@@ -129,6 +131,7 @@ export class Game {
     this.player.herd = this.herd;
     this.npc = new Townsfolk(Math.max(50, Math.round(q.npc * 1.6)), this.assets.ramp);
     this.npc.enableStars(this.assets, q.npc >= 150 ? 8 : q.npc >= 70 ? 4 : 2);
+    this.races = new Racecourse(this.assets, this.npc); this.scene.add(this.races.group);
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
@@ -262,6 +265,7 @@ export class Game {
     this.updateWeather(dt);
     this.npc.playerSpeed = this.player.hspeed;
     this.npc.update(dt, this.player.x, this.player.z, this.gameTime);
+    this.races.update(dt, this.player.x, this.player.z, now / 1000);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
     this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);
     lap('sim');

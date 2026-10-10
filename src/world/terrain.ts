@@ -158,7 +158,21 @@ export function islandAt(x: number, z: number): Island | null {
   return best;
 }
 
+/** levelled grounds (the racecourse): stadium-shaped areas pulled to a constant height, blended into the hills */
+export const FLATS: { x: number; z: number; c: number; s: number; L: number; R: number; h: number; blend: number }[] = [];
 export function heightAt(x: number, z: number): number {
+  const raw = rawHeight(x, z);
+  if (!FLATS.length) return raw;
+  let h = raw;
+  for (const f of FLATS) {
+    const dx = x - f.x, dz = z - f.z;
+    if (Math.abs(dx) > f.L + f.R + f.blend + 10 || Math.abs(dz) > f.L + f.R + f.blend + 10) continue;
+    const lx = dx * f.c - dz * f.s, lz = dx * f.s + dz * f.c, d = Math.hypot(Math.max(0, Math.abs(lx) - f.L / 2), lz) - f.R;
+    if (d < f.blend) { const w = 1 - sstep(0, f.blend, d); h += (f.h - h) * w; }
+  }
+  return h;
+}
+function rawHeight(x: number, z: number): number {
   let best = SEA;
   for (const isl of ISLANDS) {
     if (Math.abs(x - isl.cx) > isl.rx * 1.3 || Math.abs(z - isl.cz) > isl.rz * 1.3) continue;

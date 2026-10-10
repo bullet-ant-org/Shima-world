@@ -7,7 +7,7 @@ import {
   benchGeo, barnGeo, isSignature, hasCustomModel, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
-import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, setCollisionShapes, type Building } from './layout';
+import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, inCourseArea, setCollisionShapes, type Building } from './layout';
 import { type Shape, rasterize } from './collide';
 import type { BuildingSpec } from '../rendering/geo';
 import {
@@ -670,7 +670,7 @@ export class World {
     const cast = ring === 0;
     const trees = new Batch(), glows = new Batch();
     const at = (x: number, z: number, id: IslandId) => islandAt(x, z)?.id === id;
-    const clear = (x: number, z: number, r = 6) => NET.edgeDist(x, z, r + 2) > r; // keep paths and roads free of vegetation
+    const clear = (x: number, z: number, r = 6) => NET.edgeDist(x, z, r + 2) > r && !inCourseArea(x, z, r); // keep paths, roads and the racecourse free of vegetation
 
     // ---- Sakura Valley: sakura groves on the lowlands, dark cedar forest on the mountains ----
     if (zone === 'valley') {

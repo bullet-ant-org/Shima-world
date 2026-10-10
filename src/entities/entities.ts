@@ -4,7 +4,7 @@ import { Assets } from '../rendering/assets';
 import { type Mode } from './hero';
 import { makeCharacter, type CharacterBody } from './humanoid';
 import { defaultSpec, normalize, type CharacterSpec } from './character';
-import { SEAT_Y, type Herd, type Horse } from './horse';
+import { HORSE_SCALE, SEAT_Y, type Herd, type Horse } from './horse';
 import type { Input } from '../core/input';
 import { heightAt, mulberry32 } from '../world/terrain';
 import { NET, blockTop, blocked, inCity } from '../world/layout';
@@ -236,7 +236,7 @@ export class Player {
     const h = this.mount;
     this.hero.pose({ dt, mode: this.mode, hs: this.hspeed, speed: h ? h.speed : this.speed3, vy: this.vy, grounded: this.grounded, boost: this.boost, bank, gait: h ? h.phase : 0 });
     if (h) {
-      this.group.position.set(h.x, h.y + h.bob + SEAT_Y - this.hero.seatHeight, h.z);
+      this.group.position.set(h.x, h.y + h.bob * HORSE_SCALE + SEAT_Y - this.hero.seatHeight, h.z);
       this.group.rotation.set(h.pitch * 0.6, h.yaw, 0, 'YXZ');
     } else {
       this.group.position.set(this.x, this.y, this.z);
