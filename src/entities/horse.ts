@@ -14,13 +14,15 @@ import { heightAt, mulberry32 } from '../world/terrain';
 import { blocked } from '../world/layout';
 
 const PI = Math.PI;
-const COATS: { body: number; dark: number; mane: number; sock: boolean }[] = [
+const COATS: { body: number; dark: number; mane: number; sock: boolean; wild?: boolean }[] = [
   { body: 0x8a4a26, dark: 0x5a2e16, mane: 0x1e140e, sock: true },   // bay
   { body: 0xb0602a, dark: 0x7a3e1a, mane: 0x8a3a18, sock: false },  // chestnut
   { body: 0x24201e, dark: 0x141210, mane: 0x0e0c0c, sock: false },  // black
   { body: 0xe8e2d8, dark: 0xbab2a6, mane: 0xf4f0ea, sock: false },  // white
   { body: 0x8e8a86, dark: 0x5e5a58, mane: 0x2e2c2c, sock: true },   // grey
   { body: 0xd8a85a, dark: 0xa87a3a, mane: 0xf4ead0, sock: true },   // palomino
+  { body: 0x3aa87a, dark: 0x1e6a4a, mane: 0xffb02e, sock: true, wild: true },   // 6: qilin (jade scales, golden flame mane)
+  { body: 0xf2f6fa, dark: 0xb8cce0, mane: 0x8ae8ff, sock: false, wild: true },  // 7: snow spirit steed
 ];
 const SADDLES = [[0x5a3018, 0xc8283c], [0x2a1a10, 0x2a6ad8], [0x6a4020, 0x2f9a5a]];
 
@@ -49,6 +51,7 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
     shape: (t, a) => 1 + 0.06 * Math.max(0, -Math.sin(a)) * Math.sin(PI * t) + 0.07 * Math.max(0, Math.sin(a)) * Math.exp(-(((t - 0.8) / 0.12) ** 2)),
     color: bodyCol,
   })];
+  if (!C.wild) {
   // saddle blanket, saddle with cantle + horn, girth, stirrups
   body.push(loft({ path: [[0, 1.515, -0.3], [0, 1.545, 0.0], [0, 1.52, 0.3]], steps: 10, seg: 24, up: [0, 1, 0], r: (t) => [0.4 * ends(t, 0.1, 0.1) + 0.004, 0.035 * ends(t, 0.1, 0.1) + 0.004], color: cloth }));
   for (const sx of [-1, 1]) body.push(loft({ path: [[sx * 0.33, 1.42, -0.26], [sx * 0.37, 1.24, -0.24], [sx * 0.37, 1.24, 0.24], [sx * 0.33, 1.42, 0.26]], steps: 12, seg: 6, up: [sx, 0, 0], r: () => [0.012, 0.012], color: shadeHex(cloth, 0.7) })); // blanket hem draping down the flanks
@@ -60,6 +63,7 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
     body.push(loft({ path: [[s * 0.39, 1.06, -0.05], [s * 0.39, 1.0, 0.0], [s * 0.39, 1.06, 0.05]], steps: 6, seg: 6, r: () => 0.012, color: 0xc8c8d0 }));
   }
   body.push(loft({ path: [[0.36, 1.25, 0.12], [0, 0.8, 0.14], [-0.36, 1.25, 0.12]], steps: 10, seg: 6, up: [0, 0, 1], r: () => [0.04, 0.012], color: leather }));
+  }
   put('body', body);
 
   // ---- neck (crest + mane) ----
@@ -118,7 +122,7 @@ const smoothT = (a: number, b: number, x: number) => { const t = Math.max(0, Mat
 
 export class Horse {
   readonly root = new THREE.Group();
-  private bodyG = new THREE.Group(); private neck: THREE.Group; private head: THREE.Group; private tail: THREE.Group;
+  readonly bodyG = new THREE.Group(); private neck: THREE.Group; readonly head: THREE.Group; private tail: THREE.Group;
   private legs: { up: THREE.Group; lo: THREE.Group; hind: boolean; side: number }[] = [];
   private inks: THREE.Mesh[] = [];
   x: number; z: number; y: number; yaw: number; speed = 0; vy = 0; grounded = true;
