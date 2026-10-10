@@ -11,6 +11,7 @@ import { Racecourse } from './entities/racing';
 import { Creatures } from './entities/creatures';
 import { Seaport } from './world/seaport';
 import { Ambient } from './entities/ambient';
+import { StreetLights } from './world/lamps';
 import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
 import { Hud, type Stats } from './ui/hud';
 import { Herd } from './entities/horse';
@@ -55,6 +56,8 @@ export class Game {
   private creatures!: Creatures;
   private port!: Seaport;
   private ambient!: Ambient;
+  private streetLights!: StreetLights;
+  private nightK = 0;
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
   private camSnap = false;
@@ -141,6 +144,7 @@ export class Game {
     this.creatures = new Creatures(this.assets.ramp, this.assets.rig); this.scene.add(this.creatures.group);
     this.port = new Seaport(this.assets); this.scene.add(this.port.group);
     this.ambient = new Ambient(this.assets.ramp, this.npc); this.scene.add(this.ambient.group);
+    this.streetLights = new StreetLights(q.npc >= 150 ? 8 : q.npc >= 70 ? 5 : 3); this.scene.add(this.streetLights.group);
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
@@ -276,8 +280,9 @@ export class Game {
     this.npc.update(dt, this.player.x, this.player.z, this.gameTime);
     this.races.update(dt, this.player.x, this.player.z, now / 1000);
     this.creatures.update(dt, this.player.x, this.player.y, this.player.z, now / 1000);
+    this.streetLights.update(this.player.x, this.player.z, Math.max(0, Math.min(1, (this.nightK - 0.25) / 0.5)));
     this.ambient.update(dt, this.player.x, this.player.y, this.player.z, now / 1000, this.gameTime);
-    this.port.update(dt, this.player.x, this.player.z, now / 1000, this.gameTime < 6 || this.gameTime > 19 ? 1 : 0);
+    this.port.update(dt, this.player.x, this.player.z, now / 1000, this.nightK);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
     this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);
     lap('sim');
@@ -441,6 +446,7 @@ export class Game {
     this.hemi.intensity = (0.95 + 0.15 * day) * (0.55 + 0.45 * this.atm.light);
     this.hemi.color.copy(sky).lerp(night > 0.5 ? NIGHT_FILL : WHITE, 0.35 + 0.25 * night);
     this.assets.setNight(night * (0.7 + 0.3 * this.rainNow));
+    this.nightK = night;
     this.sunDir.set(Math.cos(a) * 0.8, elev, 0.45).normalize();
     this.sky.update(this.frameDt, this.camera.position, sky, night, this.sunDir, this.rainNow);
     (this.stars.material as THREE.PointsMaterial).opacity = Math.max(0, night - 0.35) * (1 - this.rainNow);
