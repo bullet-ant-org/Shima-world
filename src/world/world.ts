@@ -88,6 +88,20 @@ export class World {
     buildLayout();
     this.buildFarTerrain();
     this.buildSkyline();
+    // sky-road decks: resident, so the elevated platforms are always complete (one mesh per chunk for culling)
+    for (const o of NET.buildSkyMeshes()) {
+      const mk = (m: { pos: number[]; nor: number[]; col: number[]; idx: number[]; kind?: number[] }, mat: THREE.Material) => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(m.nor, 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(m.col, 3));
+        g.setAttribute('kind', new THREE.Float32BufferAttribute(m.kind ?? new Array(m.pos.length / 3).fill(2), 1));
+        g.setIndex(m.idx); g.computeBoundingSphere();
+        const mesh = new THREE.Mesh(g, mat); mesh.matrixAutoUpdate = false; mesh.castShadow = mat === this.assets.ground; mesh.receiveShadow = true;
+        this.group.add(mesh);
+      };
+      if (o.idx.length) mk(o, this.assets.ground);
+      if (o.lights?.idx.length) mk(o.lights, this.assets.lights);
+    }
     this.buildPillars();
     this.buildLandmarks();
     this.buildProps();

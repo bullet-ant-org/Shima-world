@@ -175,13 +175,26 @@ export class PathNet {
       const v0 = o.pos.length / 3;
       // texture channel per vertex: flagstone -> rock, gravel road / runway -> gravel, sky deck -> rock
       const tk = p.kind === 'stone' || p.kind === 'sky' ? 2 : 1;
-      if (p.kind === 'sky') { this.skySeg(o, p, i); for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk); continue; }
+      if (p.kind === 'sky') continue; // sky decks are resident (see buildSkyMeshes) so they never have streaming gaps
       if (heightAt((p.x[i] + p.x[i + 1]) / 2, (p.z[i] + p.z[i + 1]) / 2) < 0.8) continue; // no paving over water / river beds
       if (p.kind === 'avenue' || p.kind === 'street') { this.roadSeg(o, p, i); continue; }
       if (p.kind === 'stone') this.stoneSeg(o, p, i); else this.runwaySeg(o, p, i);
       for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk);
     }
     return o.idx.length || o.lights?.idx.length ? o : null;
+  }
+
+  /** Every sky-road deck, grouped per chunk (for frustum culling), built once and kept resident. */
+  buildSkyMeshes(): MeshOut[] {
+    const out: MeshOut[] = [];
+    for (const segs of this.chunkIdx.values()) {
+      const sky = segs.filter((s) => s.path.kind === 'sky');
+      if (!sky.length) continue;
+      const o: MeshOut = { pos: [], nor: [], col: [], idx: [], kind: [] };
+      for (const s of sky) { const v0 = o.pos.length / 3; this.skySeg(o, s.path, s.i); for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(2); }
+      out.push(o);
+    }
+    return out;
   }
 
   private stoneSeg(o: MeshOut, p: Path, i: number): void {
