@@ -17,6 +17,7 @@ export interface CharacterSpec {
     width: number;     // -1 narrow .. 1 wide
     jaw: number;       // -1 soft/round .. 1 strong
     chin: number;      // -1 receding .. 1 jutting forward
+    chinWidth: number; // -1 pointed .. 1 broad
     eyeShape: number;  // 0 round, 1 sharp, 2 sleepy, 3 cat
     eyeSize: number;   // 0.7 .. 1.3
     eyeSpacing: number;// -1 close .. 1 far
@@ -85,7 +86,7 @@ export function defaultSpec(gender: Gender = 'female'): CharacterSpec {
   return {
     v: 1, gender, height: f ? 0.97 : 1.04, shoulders: f ? 0.3 : 0.7, bust: f ? 0.5 : 0, build: f ? 0.2 : 0.7, head: f ? 1.05 : 0.98, skin: '#ffd6bd',
     face: {
-      width: f ? -0.2 : 0.3, jaw: f ? -0.4 : 0.6, chin: 0, eyeShape: f ? 0 : 1, eyeSize: f ? 1.1 : 0.95, eyeSpacing: 0, eyeHeight: 0, eyeTilt: f ? 0.1 : 0.3,
+      width: f ? -0.2 : 0.3, jaw: f ? -0.4 : 0.6, chin: 0, chinWidth: 0, eyeShape: f ? 0 : 1, eyeSize: f ? 1.1 : 0.95, eyeSpacing: 0, eyeHeight: 0, eyeTilt: f ? 0.1 : 0.3,
       iris: f ? '#3f8cff' : '#27c4d8', lash: f ? 0.8 : 0.35, brow: f ? 0.35 : 0.7, browAngle: f ? 0 : 0.4, browHeight: 0, noseSize: 1, noseWidth: f ? 0.85 : 1.15, noseHeight: 0,
       mouth: f ? 0 : 3, mouthWidth: 1, mouthHeight: 0, blush: f ? 0.7 : 0.25, freckles: false, ears: 0, earSize: 1,
       shadow: '#7a5ae0', shadowAmt: f ? 0.35 : 0, lips: '#d0626f', lipAmt: f ? 0.4 : 0, beard: 0, scar: false, glasses: 0,
