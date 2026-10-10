@@ -27,8 +27,10 @@ export type Mode = 'ground' | 'fly' | 'brace' | 'land' | 'ride';
 export interface PoseIn { dt: number; mode: Mode; hs: number; speed: number; vy: number; grounded: boolean; boost: boolean; bank: number; gait?: number }
 
 // joints
-const H = 0, SP = 1, HD = 2, T1 = 3, T2 = 4, S1 = 5, S2 = 6, SHL = 7, ELL = 8, SHR = 9, ELR = 10, THL = 11, KNL = 12, ANL = 13, THR = 14, KNR = 15, ANR = 16;
-const NJ = 17;
+export const H = 0, SP = 1, HD = 2, T1 = 3, T2 = 4, S1 = 5, S2 = 6, SHL = 7, ELL = 8, SHR = 9, ELR = 10, THL = 11, KNL = 12, ANL = 13, THR = 14, KNR = 15, ANR = 16;
+export const NJ = 17;
+/** parent joint of each joint (-1 = rig root) */
+export const JOINT_PARENT = [-1, 0, 1, 2, 3, 1, 5, 1, 7, 1, 9, 0, 11, 12, 0, 14, 15];
 const LOOSE = [T1, T2, S1, S2]; // secondary-motion joints (springy)
 
 const HIP = 0.9;               // pelvis height above the soles at rest (thigh .42 + shin .40 + foot)
@@ -961,4 +963,22 @@ export class Hero {
   }
 
   get hipHeight(): number { return this.hipY * 0.92; }
+
+  /** standing height in metres (for framing cameras) */
+  get height(): number { return 1.95 * this.rig.scale.y / 0.92; }
+  get faceY(): number { return 1.66 * this.rig.scale.y / 0.92; }
+  get headSize(): number { return 0.5 * this.rig.scale.y / 0.92; }
+
+  /** joint pivots (read by the skeleton retargeter) */
+  get joints(): readonly THREE.Group[] { return this.J; }
+  /** current pelvis height in rig units (HIP at rest) */
+  get pelvisY(): number { return this.hipY; }
+  /** drop every mesh, keeping only the animated joint hierarchy (used when another body is driven by this rig) */
+  stripMeshes(): void {
+    const meshes: THREE.Object3D[] = [];
+    this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o); });
+    for (const m of meshes) m.removeFromParent();
+    for (const o of this.owned) o.dispose();
+    this.owned.length = 0;
+  }
 }

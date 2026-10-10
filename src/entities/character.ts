@@ -5,6 +5,8 @@ export type Gender = 'female' | 'male';
 export interface CharacterSpec {
   v: 1;
   gender: Gender;
+  /** 0 = rigged base model (realistic proportions), 1 = classic anime chibi */
+  base: number;
   // body
   height: number;      // 0.9 .. 1.1
   shoulders: number;   // 0 narrow .. 1 broad
@@ -66,6 +68,7 @@ export interface CharacterSpec {
 export const HAIR_STYLES = ['Spiky', 'Ponytail', 'Bob', 'Long Straight', 'Twin Tails', 'Braid', 'Odango Buns', 'Short Messy', 'Side Swept', 'Topknot', 'Wavy Long', 'Slick Short', 'Big Volume', 'Wild Spikes', 'Hime Cut', 'Undercut', 'Mohawk', 'Man Bun', 'Afro', 'Buzz Cut', 'Wolf Cut', 'Long Ponytail'];
 export const BEARDS = ['None', 'Stubble', 'Goatee', 'Full Beard', 'Moustache'];
 export const GLASSES = ['None', 'Round', 'Square', 'Shades'];
+export const BASES = ['Base Model', 'Anime Chibi'];
 export const WEAPONS = ['None', 'Katana (waist)', 'Back Sword', 'Twin Back Swords'];
 export const EYE_SHAPES = ['Round', 'Sharp', 'Sleepy', 'Cat'];
 export const MOUTHS = ['Smile', 'Neutral', 'Grin', 'Smirk', 'Pout'];
@@ -85,7 +88,7 @@ export const OUTFIT_COLORS = ['#1b2352', '#34439a', '#2a7de1', '#27b9c9', '#2fbf
 export function defaultSpec(gender: Gender = 'female'): CharacterSpec {
   const f = gender === 'female';
   return {
-    v: 1, gender, height: f ? 0.97 : 1.04, shoulders: f ? 0.3 : 0.7, bust: f ? 0.5 : 0, build: f ? 0.2 : 0.7, head: f ? 1.05 : 0.98, skin: '#ffd6bd',
+    v: 1, gender, base: 0, height: f ? 0.97 : 1.04, shoulders: f ? 0.3 : 0.7, bust: f ? 0.5 : 0, build: f ? 0.2 : 0.7, head: f ? 1.05 : 0.98, skin: '#ffd6bd',
     face: {
       width: f ? -0.2 : 0.3, jaw: f ? -0.4 : 0.6, chin: 0, chinWidth: 0, cheekWidth: 0, eyeShape: f ? 0 : 1, eyeSize: f ? 1.1 : 0.95, eyeSpacing: 0, eyeHeight: 0, eyeTilt: f ? 0.1 : 0.3,
       iris: f ? '#3f8cff' : '#27c4d8', lash: f ? 0.8 : 0.35, brow: f ? 0.35 : 0.7, browAngle: f ? 0 : 0.4, browHeight: 0, noseSize: 1, noseWidth: f ? 0.85 : 1.15, noseHeight: 0,

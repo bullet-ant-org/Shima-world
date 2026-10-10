@@ -7,6 +7,7 @@ import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Herd } from './entities/horse';
+import { loadBaseModel } from './entities/humanoid';
 import { Grass } from './rendering/grass';
 import { PASTURES, blockTop } from './world/layout';
 import { Input } from './core/input';
@@ -99,6 +100,7 @@ export class Game {
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
 
+    if ((spec?.base ?? 0) === 0) await loadBaseModel().catch((e) => console.error('base model failed to load', e));
     // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
     const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
     this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn, spec, q.outlines !== 'off', q.heroDetail);

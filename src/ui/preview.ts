@@ -1,6 +1,7 @@
 /** Character-builder preview: its own small renderer, alive only while the builder is open. */
 import * as THREE from 'three/webgpu';
-import { Hero, type HeroAssets, type Mode } from '../entities/hero';
+import { type HeroAssets, type Mode } from '../entities/hero';
+import { loadBaseModel, makeCharacter, type CharacterBody } from '../entities/humanoid';
 import type { CharacterSpec } from '../entities/character';
 
 export type Demo = 'idle' | 'walk' | 'run' | 'fly';
@@ -10,7 +11,7 @@ export class Preview {
   private scene = new THREE.Scene();
   private cam = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
   private assets: HeroAssets;
-  private hero: Hero | null = null;
+  private hero: CharacterBody | null = null;
   private spec: CharacterSpec;
   private yaw = 0.5; private tYaw = 0.5; private zoom = 0; private tZoom = 0;
   private demo: Demo = 'idle';
@@ -43,6 +44,8 @@ export class Preview {
     this.resize();
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(this.canvas);
     this.bindDrag();
+    await loadBaseModel().catch((e) => console.error('base model failed to load', e));
+    if (this.dead) return false;
     this.rebuild();
     this.last = performance.now();
     const loop = (t: number) => {
@@ -84,7 +87,7 @@ export class Preview {
     if (this.dead) return;
     this.hero?.dispose();
     try {
-      this.hero = new Hero(this.assets, this.spec, true);
+      this.hero = makeCharacter(this.assets, this.spec, true);
       this.scene.add(this.hero.root);
     } catch (e) { console.error('hero build failed', e); this.hero = null; }
   }
@@ -93,7 +96,8 @@ export class Preview {
     this.yaw += (this.tYaw - this.yaw) * Math.min(1, dt * 10);
     this.zoom += (this.tZoom - this.zoom) * Math.min(1, dt * 6);
     if (this.demo === 'idle' && !this.userTurned && Math.abs(this.tYaw - this.yaw) < 0.01) this.tYaw += dt * 0.15;
-    const z = this.zoom, d = 6.2 - z * 4.8, ty = 0.98 + z * 0.72;
+    const H = this.hero, hs = (H?.height ?? 1.95) / 1.95, z = this.zoom;
+    const d = 6.2 * (0.35 + 0.65 * hs) * (1 - z) + 2.3 * (H?.headSize ?? 0.5) * z, ty = 0.98 * hs * (1 - z) + (H?.faceY ?? 1.66) * z;
     this.cam.position.set(Math.sin(this.yaw) * d, ty + 0.15, Math.cos(this.yaw) * d);
     this.cam.lookAt(0, ty, 0);
     if (this.hero) {

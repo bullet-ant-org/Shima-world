@@ -1,7 +1,8 @@
 /** Player, simulation-LOD NPC crowd, hierarchical traffic and remote players. All instanced, no per-frame allocation. */
 import * as THREE from 'three/webgpu';
 import { Assets } from '../rendering/assets';
-import { Hero, type Mode } from './hero';
+import { type Mode } from './hero';
+import { makeCharacter, type CharacterBody } from './humanoid';
 import { defaultSpec, normalize, type CharacterSpec } from './character';
 import { SEAT_Y, type Herd, type Horse } from './horse';
 import type { Input } from '../core/input';
@@ -17,7 +18,7 @@ const PALETTE = [0xc8283c, 0x2b3d8f, 0xe9dfc8, 0x25c8e6, 0x8f3dd1, 0xf0a030, 0x2
 
 /** Player controller: walking, jumping, flying (hover / fly / boost) and the brace-slide when landing at speed. */
 export class Player {
-  readonly hero: Hero;
+  readonly hero: CharacterBody;
   readonly group: THREE.Group;
   x = 0; z = 0; y = 0; vy = 0; vx = 0; vz = 0; yaw = 0;
   grounded = true;
@@ -34,7 +35,7 @@ export class Player {
   nearHorse: Horse | null = null;
 
   constructor(assets: Assets, spawn: { x: number; z: number }, spec?: CharacterSpec, ink = true, detail = 1) {
-    this.hero = new Hero(assets, spec ? normalize(spec) : defaultSpec(), ink, detail);
+    this.hero = makeCharacter(assets, spec ? normalize(spec) : defaultSpec(), ink, detail);
     this.group = this.hero.root;
     this.x = spawn.x; this.z = spawn.z;
     this.y = heightAt(this.x, this.z);
