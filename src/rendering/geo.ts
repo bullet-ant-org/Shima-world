@@ -125,7 +125,7 @@ export class MB {
 // ---------------------------------------------------------------------------------------------------------------------
 // City buildings
 // ---------------------------------------------------------------------------------------------------------------------
-export type Tpl = 'box' | 'L' | 'step' | 'round' | 'twin' | 'podium' | 'wedge' | 'office' | 'bank' | 'club' | 'market' | 'fortress' | 'dealer' | 'machiya' | 'broadcast';
+export type Tpl = 'box' | 'L' | 'step' | 'round' | 'twin' | 'podium' | 'wedge' | 'office' | 'bank' | 'club' | 'market' | 'fortress' | 'dealer' | 'machiya' | 'broadcast' | 'shop' | 'hq';
 export interface BuildingSpec { tpl: Tpl; w: number; d: number; fl: number; pal: number; roof: number; seed: number; shop: boolean }
 export interface BuildingGeo { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null; far: THREE.BufferGeometry }
 
@@ -163,6 +163,8 @@ function footprints(s: BuildingSpec): Prism[] {
     case 'fortress': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }, { poly: rect(0, 0, w * 0.34, d * 0.34), y0: 2 * FH, fl: 5 }];
     case 'broadcast': return [{ poly: rect(0, 0, 8, 8), y0: 0, fl }];
     case 'dealer': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }];
+    case 'shop': return [{ poly: rect(0, 0, w, d), y0: 0, fl: 2 }];
+    case 'hq': return [{ poly: rect(0, 0, w + 8, d + 8), y0: 0, fl: 2 }, { poly: rect(0, 0, w * 0.5, d * 0.5), y0: 2 * FH, fl }];
     default: return [{ poly: rect(0, 0, w, d), y0: 0, fl }];
   }
 }
@@ -455,7 +457,85 @@ const broadcastBuilder: Custom = (s, lit, lights, r) => {
   lit.cyl(0, 0, 12, 12, 2 + H * 0.36, 2 + H * 0.36 + 2.2, 16, white); lights.box(0, 2 + H * 0.36 + 1, 0, 24.2, 0.5, 24.2, NEON[1]);
 };
 
-const CUSTOM: Partial<Record<Tpl, Custom>> = { office: officeBuilder, bank: bankBuilder, club: clubBuilder, market: marketBuilder, fortress: fortressBuilder, dealer: dealerBuilder, machiya: machiyaBuilder, broadcast: broadcastBuilder };
+
+/** Street-level shop (variant = pal % 5): 0 auto shop, 1 elixir apothecary, 2 liquor store, 3 ramen shop, 4 convenience store. */
+export const SHOP_NAMES = ['AUTO SHOP', 'ELIXIRS', 'LIQUOR', 'RAMEN', 'KONBINI'];
+const shopBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d } = s, v = s.pal % 5, h = 7.2, z = d / 2;
+  const WALLS = [hex(0x8a8f99), hex(0x5a3a6a), hex(0x3a2a24), hex(0xe8dcc0), hex(0xf2f4f6)], wall = WALLS[v];
+  const SIGN = [hex(0xffb02e), hex(0xb46bff), hex(0xff3d6e), hex(0xff5a3a), hex(0x25e6a0)], neon = SIGN[v];
+  lit.box(0, -1.5, 0, w + 0.6, 3, d + 0.6, hex(0x6d7078), 63 & ~32);
+  lit.box(0, h / 2, 0, w, h, d, wall);
+  lit.box(0, h + 0.3, 0, w + 0.5, 0.6, d + 0.5, shade(wall, 0.75));                                   // parapet
+  // sign board over the shopfront, with a neon face and a glowing edge
+  lit.box(0, h - 1.1, z + 0.35, w * 0.9, 1.6, 0.5, hex(0x1a1c24));
+  lights.box(0, h - 1.1, z + 0.62, w * 0.8, 1.1, 0.04, neon, 1);
+  for (let i = 0; i < 6; i++) lights.box(-w * 0.32 + i * w * 0.128, h - 1.1, z + 0.66, w * 0.06, 0.55, 0.03, hex(0xffffff), 1); // "lettering"
+  if (v === 0) {
+    // auto shop: two roll-up bays (one open with a car on a lift), tyre stacks, oil drums, tool wall
+    for (const sx of [-1, 1]) { lit.box(sx * w * 0.24, 4.45, z + 0.08, w * 0.42, 0.25, 0.16, hex(0x2a2c34)); for (const e of [-1, 1]) lit.box(sx * w * 0.24 + e * w * 0.2, 2.2, z + 0.08, 0.25, 4.4, 0.16, hex(0x2a2c34)); }
+    lit.box(-w * 0.24, 2.6, z + 0.12, w * 0.38, 3.6, 0.06, hex(0xb8bcc4), 1);                          // closed shutter
+    for (let k = 0; k < 9; k++) lit.box(-w * 0.24, 1.0 + k * 0.4, z + 0.16, w * 0.38, 0.05, 0.02, hex(0x8a8e96), 1);
+    lights.box(w * 0.24, 2.2, z + 0.04, w * 0.38, 4.3, 0.04, hex(0xfff2d0), 1);                          // lit open bay
+    lit.box(w * 0.24, 1.0, z + 1.2, 0.3, 2.0, 0.3, hex(0xd8b04a)); lit.box(w * 0.24, 1.3, z + 1.2, 3.6, 0.2, 2, hex(0xd8b04a)); // lift on the apron
+    lit.box(w * 0.24, 1.85, z + 1.2, 3.6, 0.9, 1.7, hex(0xc8283c)); lit.box(w * 0.24 - 0.2, 2.5, z + 1.2, 2, 0.6, 1.5, hex(0x2c4a63)); // car on the lift
+    for (let k = 0; k < 4; k++) lit.cyl(w / 2 + 1.2, z - 1 - (k % 2) * 1.1, 0.42, 0.42, Math.floor(k / 2) * 0.32, Math.floor(k / 2) * 0.32 + 0.3, 10, hex(0x1c1c20));
+    for (let k = 0; k < 3; k++) lit.cyl(-w / 2 - 0.9, z - 0.6 - k * 0.8, 0.32, 0.32, 0, 0.9, 10, [hex(0x2a6ad8), hex(0xc8283c), hex(0x2f9a5a)][k]);
+  } else {
+    // glass shopfront with mullions, door, and a lit interior of the trade's goods
+    lit.box(0, 2.1, z + 0.02, w * 0.86, 3.6, 0.1, hex(0x2a2c34), 1 | 4 | 8 | 16);
+    lights.box(0, 2.1, z + 0.09, w * 0.82, 3.3, 0.03, v === 1 ? hex(0x6a3aa8) : v === 4 ? hex(0xf4fbff) : hex(0xffd9a0), 1);
+    for (let k = -2; k <= 2; k++) lit.box(k * w * 0.18, 2.1, z + 0.13, 0.12, 3.4, 0.06, hex(0x1a1c24), 1);
+    const goods = v === 1 ? [0x8aff6a, 0xff6ad0, 0x45ecff, 0xffd84a, 0xb08aff] : v === 2 ? [0x8a4a1a, 0x2a6a2a, 0xd8b04a, 0x6a1a2a, 0xe8e0c0] : v === 3 ? [0xc8283c, 0xf2e6b8] : [0xffffff, 0xf4d23a, 0x2a6ad8, 0xe83a3a];
+    if (v === 1 || v === 2 || v === 4) for (let row = 0; row < 3; row++) for (let k = 0; k < Math.floor(w * 1.4); k++) {
+      const x = -w * 0.4 + (k / Math.floor(w * 1.4)) * w * 0.8, c = hex(goods[Math.floor(r() * goods.length)]);
+      (v === 1 ? lights : lit).box(x, 1.0 + row * 1.05, z + 0.2, 0.2, 0.45 + r() * 0.2, 0.16, c);
+      if (k % 6 === 0) lit.box(x + w * 0.06, 0.72 + row * 1.05, z + 0.2, w * 0.16, 0.06, 0.3, hex(0x5a4030));
+    }
+    if (v === 3) {
+      // ramen: noren curtain strips and red lanterns
+      for (let k = 0; k < 5; k++) lit.box(-w * 0.2 + k * w * 0.1, 3.4, z + 0.35, w * 0.085, 1.1, 0.03, k % 2 ? hex(0x2a2a40) : hex(0x3a3a58), 1);
+      for (const sx of [-1, 1]) { lit.box(sx * w * 0.43, 3.4, z + 0.5, 0.6, 0.85, 0.6, RED); lights.box(sx * w * 0.43, 3.4, z + 0.5, 0.48, 0.72, 0.48, hex(0xffb25a)); }
+    }
+    if (v === 1) { lit.cyl(w * 0.42, z + 0.9, 0.6, 0.75, 0, 0.9, 10, hex(0x2a2a30)); lights.cyl(w * 0.42, z + 0.9, 0.55, 0.55, 0.9, 0.95, 10, hex(0x8aff6a)); } // bubbling cauldron
+    if (v === 2) for (const sx of [-1, 1]) lights.box(sx * w * 0.44, h - 2.6, z + 0.5, 0.25, 2.2, 0.1, neon);        // neon pillars
+    if (v === 4) { lit.box(w / 2 + 0.7, 1, z - 0.6, 1.1, 2, 0.9, hex(0xe83a3a)); lights.box(w / 2 + 0.7, 1.2, z - 0.14, 0.9, 1.2, 0.02, hex(0xf4fbff), 1); } // vending machine
+  }
+  // awning over the shopfront (striped for food shops)
+  for (let k = 0; k < 8; k++) {
+    const x0 = -w * 0.45 + (k * w * 0.9) / 8, x1 = x0 + (w * 0.9) / 8, c = v === 3 || v === 4 ? (k % 2 ? hex(0xf4efe2) : neon) : shade(neon, 0.6);
+    lit.quad([x0, 4.3, z + 1.6], [x1, 4.3, z + 1.6], [x1, 4.9, z + 0.1], [x0, 4.9, z + 0.1], c, [0, 0, 0]);
+    lit.quad([x0, 4.3, z + 1.6], [x1, 4.3, z + 1.6], [x1, 4.9, z + 0.1], [x0, 4.9, z + 0.1], shade(c, 0.7), [0, 9, 0]);
+  }
+  lit.box(w * 0.25, h + 1.2, -d * 0.2, 2.4, 1.6, 2, hex(0x8a8e96)); lit.box(-w * 0.2, h + 0.9, -d * 0.1, 1.4, 1, 1.4, hex(0x7a7e88)); // rooftop units
+};
+
+/** Signature corporate HQ: a twisting glass tower of stacked rotated slabs, lit crown ring, logo band and spire. */
+const hqBuilder: Custom = (s, lit, lights, r) => {
+  const { w, d, fl } = s, glass = GLASS_TINTS[s.pal % GLASS_TINTS.length], frame = hex(0xe6eaf0), neon = NEON[s.pal % NEON.length];
+  const segs = Math.max(6, Math.round(fl / 5)), H = fl * FH, twist = (r() < 0.5 ? 1 : -1) * (0.5 + r() * 0.5);
+  lit.box(0, 4, 0, w + 10, 8, d + 10, shade(hex(0xd8d4cc), 0.9));                                        // podium
+  lights.box(0, 3.5, d / 2 + 5.05, (w + 10) * 0.7, 4, 0.05, WARM_LIT[1], 1);
+  for (let i = 0; i < segs; i++) {
+    const t = i / segs, a = twist * t, sc = 1 - 0.28 * t, y0 = 8 + (H * i) / segs, y1 = 8 + (H * (i + 1)) / segs - 0.5;
+    const hw = (w / 2) * sc, hd = (d / 2) * sc, c = Math.cos(a), sn = Math.sin(a);
+    const poly = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, z]) => [x * c - z * sn, x * sn + z * c]);
+    lit.prism(poly, y0, y1, shade(glass, 0.95 + (i % 2) * 0.1), shade(glass, 0.8));
+    const sl = [[-hw - 0.4, -hd - 0.4], [hw + 0.4, -hd - 0.4], [hw + 0.4, hd + 0.4], [-hw - 0.4, hd + 0.4]].map(([x, z]) => [x * c - z * sn, x * sn + z * c]);
+    lit.prism(sl, y1 - 0.1, y1 + 0.5, frame, frame);                                                      // floor-plate fins between slabs
+    if (r() < 0.55) { // a few lit floors per slab
+      const ly = y0 + (y1 - y0) * (0.3 + r() * 0.4), lw = [[-hw - 0.05, -hd - 0.05], [hw + 0.05, -hd - 0.05], [hw + 0.05, hd + 0.05], [-hw - 0.05, hd + 0.05]].map(([x, z]) => [x * c - z * sn, x * sn + z * c]);
+      lights.prism(lw, ly, ly + 1.4, WARM_LIT[Math.floor(r() * 5)], null);
+    }
+  }
+  const top = 8 + H, ta = twist, tc = Math.cos(ta), ts = Math.sin(ta), hw = (w / 2) * 0.72, hd = (d / 2) * 0.72;
+  const ring = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, z]) => [x * tc - z * ts, x * ts + z * tc]);
+  lights.prism(ring, top + 0.6, top + 2.4, neon, null);                                                   // crown ring
+  lit.prism(ring.map(([x, z]) => [x * 0.7, z * 0.7]), top, top + 9, shade(glass, 1.15), frame);
+  lit.cyl(0, 0, 0.9, 0.15, top + 9, top + 34, 8, frame); lights.box(0, top + 34.5, 0, 1, 1, 1, hex(0xff3030));
+};
+
+const CUSTOM: Partial<Record<Tpl, Custom>> = { office: officeBuilder, bank: bankBuilder, club: clubBuilder, market: marketBuilder, fortress: fortressBuilder, dealer: dealerBuilder, machiya: machiyaBuilder, broadcast: broadcastBuilder, shop: shopBuilder, hq: hqBuilder };
 
 const cache = new Map<string, BuildingGeo>();
 const specKey = (s: BuildingSpec) => `${s.tpl}|${s.w}|${s.d}|${s.fl}|${s.pal}|${s.roof}|${s.seed}|${s.shop ? 1 : 0}`;
@@ -464,6 +544,9 @@ const specKey = (s: BuildingSpec) => `${s.tpl}|${s.w}|${s.d}|${s.fl}|${s.pal}|${
 export function hasBuildingDetail(spec: BuildingSpec): boolean { return cache.has(specKey(spec) + 'N'); }
 
 /** `detail` = near geometry (protruding windows etc); the far geometry is always built. Cached per spec. */
+/** designs with their own recognisable model (worth building up close even when detailed windows are off) */
+export const isSignature = (spec: BuildingSpec) => !!CUSTOM[spec.tpl] && spec.tpl !== 'office' && spec.tpl !== 'machiya';
+
 export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null } {
   const key = specKey(spec) + (detail ? 'N' : 'F');
   const hit = cache.get(key);
@@ -891,4 +974,57 @@ export function scarecrowGeo(): Pair {
   m.box(0, 1.55, 0, 0.6, 0.8, 0.35, hex(0x3a5ab8)); m.box(0, 2.3, 0, 0.42, 0.42, 0.42, hex(0xe8d8a8));
   m.cyl(0, 0, 0.75, 0.3, 2.45, 2.62, 10, hex(0xd8b04a)); m.cyl(0, 0, 0.3, 0.05, 2.62, 2.95, 8, hex(0xd8b04a));
   return done(m, new MB());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Street furniture (streamed with the near city chunks)
+// ---------------------------------------------------------------------------------------------------------------------
+/** sidewalk tree: iron grate, slim trunk, layered round canopy (v: 0 green, 1 cherry, 2 autumn) */
+export function streetTreeGeo(v: number): Pair {
+  const m = new MB(), leaf = hex([0x4a9a3e, 0xf2a6c6, 0xe08a3a][v]), leafD = shade(leaf, 0.78);
+  m.box(0, 0.02, 0, 1.6, 0.06, 1.6, hex(0x3a3c44), 16); m.box(0, 0.05, 0, 1.2, 0.06, 1.2, hex(0x5a4030), 16);
+  m.cyl(0, 0, 0.13, 0.1, 0, 2.6, 6, hex(0x5a4030));
+  m.cyl(0, 0, 1.3, 1.6, 2.4, 3.3, 9, leafD); m.cyl(0, 0, 1.6, 1.3, 3.3, 4.3, 9, leaf); m.cyl(0, 0, 1.3, 0.5, 4.3, 5.1, 9, shade(leaf, 1.08));
+  return done(m, new MB());
+}
+export function trashcanGeo(): Pair {
+  const m = new MB();
+  m.cyl(0, 0, 0.32, 0.36, 0, 0.95, 10, hex(0x2f6a4a)); m.cyl(0, 0, 0.38, 0.38, 0.95, 1.02, 10, hex(0x24503a)); m.cyl(0, 0, 0.18, 0.18, 1.02, 1.06, 8, hex(0x1a1c20));
+  m.box(0.37, 0.55, 0, 0.04, 0.4, 0.2, hex(0xd9a441), 4);
+  return done(m, new MB());
+}
+export function trashbagGeo(): Pair {
+  const m = new MB(), B = hex(0x23252c), B2 = hex(0x34363e);
+  m.cyl(0, 0, 0.36, 0.3, 0, 0.55, 7, B); m.cyl(0, 0, 0.3, 0.06, 0.55, 0.78, 7, B);
+  m.cyl(0.55, 0.25, 0.3, 0.26, 0, 0.45, 7, B2); m.cyl(0.55, 0.25, 0.26, 0.05, 0.45, 0.64, 7, B2);
+  m.cyl(0.2, -0.5, 0.28, 0.24, 0, 0.4, 7, hex(0x3a5a8a)); m.box(-0.6, 0.15, 0.2, 0.5, 0.35, 0.4, hex(0xb08a5a)); // a cardboard box
+  return done(m, new MB());
+}
+export function vendingGeo(v: number): Pair {
+  const m = new MB(), l = new MB(), body = hex([0xe83a3a, 0x2a6ad8, 0xf4f4f6][v % 3]);
+  m.box(0, 0.95, 0, 1.0, 1.9, 0.75, body);
+  m.box(0, 1.25, 0.39, 0.84, 1.0, 0.04, hex(0x1a1c24), 1);
+  for (let r = 0; r < 3; r++) for (let k = 0; k < 5; k++) l.box(-0.32 + k * 0.16, 0.92 + r * 0.32, 0.42, 0.1, 0.2, 0.03, hex([0xffffff, 0xf4d23a, 0x45ecff, 0xff6ad0, 0x8aff6a][(r + k) % 5]), 1);
+  m.box(0, 0.35, 0.39, 0.6, 0.22, 0.05, hex(0x101014), 1);
+  l.box(0, 1.82, 0.4, 0.86, 0.1, 0.03, hex(0xf4fbff), 1);
+  return done(m, l);
+}
+export function hydrantGeo(): Pair {
+  const m = new MB(), R = hex(0xd8343a);
+  m.cyl(0, 0, 0.16, 0.16, 0, 0.62, 8, R); m.cyl(0, 0, 0.19, 0.12, 0.62, 0.78, 8, R); m.box(0, 0.45, 0, 0.5, 0.12, 0.12, R);
+  return done(m, new MB());
+}
+export function planterGeo(): Pair {
+  const m = new MB();
+  m.box(0, 0.35, 0, 2.2, 0.7, 0.9, hex(0x9a9ea6)); m.box(0, 0.72, 0, 2.0, 0.08, 0.7, hex(0x5a4030), 16);
+  for (let k = 0; k < 5; k++) m.cyl(-0.8 + k * 0.4, (k % 2) * 0.1, 0.25, 0.05, 0.7, 1.2 + (k % 3) * 0.15, 6, hex([0x4a9a3e, 0x5aa83a, 0xf2a6c6][k % 3]));
+  return done(m, new MB());
+}
+export function busStopGeo(): Pair {
+  const m = new MB(), l = new MB(), F = hex(0x3a3e48);
+  for (const x of [-1.8, 1.8]) m.box(x, 1.25, -0.5, 0.12, 2.5, 0.12, F);
+  m.box(0, 2.55, 0, 4, 0.14, 1.6, F); m.box(0, 1.3, -0.55, 3.6, 2.2, 0.05, hex(0x9ac8e0));
+  m.box(0, 0.48, -0.25, 3, 0.08, 0.45, hex(0x8a6a4a)); for (const x of [-1.2, 1.2]) m.box(x, 0.24, -0.25, 0.08, 0.48, 0.4, F);
+  m.box(1.6, 1.3, -0.48, 0.7, 1.6, 0.06, F); l.box(1.6, 1.3, -0.44, 0.6, 1.5, 0.02, hex(0xf4e8ff), 1); // ad panel
+  return done(m, l);
 }

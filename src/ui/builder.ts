@@ -61,7 +61,7 @@ export class Builder {
     q('#cb-random').onclick = () => this.replace(randomSpec(this.spec.gender));
     q('#cb-reset').onclick = () => this.replace(defaultSpec(this.spec.gender));
     q('#cb-done').onclick = () => this.close(true);
-    ['idle', 'walk', 'fly'].forEach((d) => { q('#cb-demo-' + d).onclick = () => this.preview?.setDemo(d as 'idle'); });
+    ['idle', 'walk', 'run', 'fly'].forEach((d) => { q('#cb-demo-' + d).onclick = () => this.preview?.setDemo(d as 'idle'); });
     this.renderTab();
     this.preview = new Preview(q<HTMLCanvasElement>('#preview'), this.spec);
     const ok = await this.preview.start();

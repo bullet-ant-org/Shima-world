@@ -300,21 +300,23 @@ export class Hero {
     head.scale.setScalar(1.42 * spec.head);
     const wS = 1 + 0.1 * F_.width, jw = 1 + 0.16 * F_.jaw;
     const crownC = 0.228, crownR = 0.152;
-    const faceX = keys([[0.035, 0], [0.038, 0.016 * jw], [0.05, 0.031 * jw], [0.075, 0.06 * jw], [0.11, 0.094 * wS * Math.sqrt(jw)], [0.15, 0.118 * wS], [0.2, 0.133 * wS], [crownC, 0.135 * wS]]);
-    const faceZ = keys([[0.035, 0], [0.038, 0.014], [0.05, 0.026], [0.075, 0.055], [0.11, 0.094], [0.15, 0.121], [0.2, 0.135], [crownC, 0.14]]);
+    // anime lower face: narrow, tapering to a small rounded chin point; the Jaw slider moves the jaw angle, not the chin tip
+    const faceX = keys([[0.03, 0], [0.034, 0.011], [0.045, 0.02], [0.065, 0.036], [0.09, 0.063 * jw], [0.12, 0.099 * wS * Math.sqrt(jw)], [0.15, 0.119 * wS], [0.2, 0.133 * wS], [crownC, 0.135 * wS]]);
+    const faceZ = keys([[0.03, 0], [0.034, 0.011], [0.045, 0.022], [0.065, 0.042], [0.09, 0.072], [0.12, 0.104], [0.15, 0.123], [0.2, 0.135], [crownC, 0.14]]);
     const dome = (y: number) => Math.sqrt(Math.max(0, 1 - ((y - crownC) / crownR) ** 2));
     const hx = (y: number) => (y > crownC ? 0.135 * wS * dome(y) : faceX(y)), hz = (y: number) => (y > crownC ? 0.14 * dome(y) : faceZ(y));
     const headShape = (_t: number, a: number, p: THREE.Vector3) => {
       const s = Math.sin(a), c = Math.cos(a), y = p.y;
-      const jawK = 0.3 * (1 - smooth(0.07, 0.16, y));                                     // V-shaped chin seen from above
+      const jawK = 0.22 * (1 - smooth(0.08, 0.16, y));                                     // V-shaped chin seen from above
       const back = 0.07 * Math.max(0, -s) * smooth(0.12, 0.24, y);                        // fuller back of the skull
       const cheek = 0.035 * c * c * Math.exp(-(((y - 0.12) / 0.04) ** 2));                // soft cheeks
       // jaw: the back half of the lower rings reaches toward the neck/ear, giving a real jawline and jaw angle in profile
-      const jawZone = smooth(0.04, 0.085, y) * (1 - smooth(0.12, 0.16, y)), bs = Math.max(0, -s);
+      const jawZone = smooth(0.06, 0.1, y) * (1 - smooth(0.13, 0.17, y)), bs = Math.max(0, -s);
       const jawBack = (0.42 + 0.14 * F_.jaw) * c * c * (1 - smooth(-0.25, 0.45, s)) * jawZone + 0.12 * bs * jawZone; void bs;
-      return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack;
+      const chin = 0.18 * Math.pow(Math.max(0, s), 4) * Math.exp(-(((y - 0.048) / 0.016) ** 2)); // the chin point juts forward a touch
+      return 1 - jawK * c * c * Math.max(0, s) + back + cheek + jawBack + chin;
     };
-    const headG = loft({ path: [[0, 0.035, 0.04], [0, 0.08, 0.026], [0, 0.14, 0.008], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 36, seg: 28, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
+    const headG = loft({ path: [[0, 0.03, 0.042], [0, 0.07, 0.03], [0, 0.14, 0.008], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 36, seg: 28, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
     // front of the face at a given height (for placing the nose)
     const frontZ = (yq: number) => { const P = headG.attributes.position; let best = 0, bd2 = 1e9; for (let i = 0; i < P.count; i++) { if (Math.abs(P.getX(i)) > 0.012 || P.getZ(i) < 0) continue; const d = Math.abs(P.getY(i) - yq); if (d < bd2) { bd2 = d; best = P.getZ(i); } } return best; };
     // painted face decal: the head's own front faces, lifted a hair along their normals, with planar UVs
@@ -626,46 +628,64 @@ export class Hero {
   // =====================================================================================================================
   private static set(a: Float32Array, j: number, x: number, y: number, z: number): void { a[j * 3] = x; a[j * 3 + 1] = y; a[j * 3 + 2] = z; }
 
-  /** walk / run / idle on the ground, plus the airborne tuck (blended in by `air`). */
+  /**
+   * Walk / run / idle on the ground. Gaits are keyframed over one cycle (u = 0..1, u = 0 is the left heel strike, the right
+   * leg runs half a cycle later), blended walk -> run by speed. Feet stay flat while planted (ankle cancels thigh + knee),
+   * then roll to the toes; the run adds knee drive, a flight phase, a forward lean and pumping arms.
+   */
   private poseGround(a: Float32Array, p: PoseIn, c: number): number {
     const S = Hero.set, hs = p.hs;
-    this.wMove += (smooth(0.4, 2.2, hs) - this.wMove) * Math.min(1, p.dt * 10);
-    this.wRun += (smooth(5.2, 7.6, hs) - this.wRun) * Math.min(1, p.dt * 8);
-    const w = this.wMove, run = this.wRun;
-    // stride length (two steps) grows with speed; phase advances by distance travelled, so feet plant instead of skating
-    const stride = 1.3 + hs * 0.3;
-    if (w > 0.02) this.phase += p.dt * (hs / stride) * PI * 2;
-    const ph = this.phase, s = Math.sin(ph), co = Math.cos(ph), s2 = -s, co2 = -co;
-    const A = clamp(Math.asin(clamp(stride / (4 * 0.88), 0, 0.98)), 0.3, 0.92) * w;
-    const kMax = 0.5 + run * 1.0;
-    const leg = (th: number, kn: number, an: number, sn: number, cs: number, side: number, j: number) => {
-      const thigh = -A * sn - 0.05 * w - run * 0.1 * Math.max(0, -sn) * 0 ;
-      const swing = Math.max(0, cs);                                                    // leg is moving forward
-      const knee = kMax * w * (swing * swing * 0.9 + 0.22 * Math.max(0, -cs) * (1 - Math.abs(sn))) + 0.07 * w;
-      const toeOff = 0.4 * w * Math.max(0, -sn) * Math.max(0, cs + 0.25);
-      const ankle = -(thigh + knee) * 0.72 + toeOff;
-      S(a, th, thigh, 0, 0.025 * side * w); S(a, kn, knee, 0, 0); S(a, an, ankle, 0, 0);
-      void j;
+    this.wMove += (smooth(0.3, 1.8, hs) - this.wMove) * Math.min(1, p.dt * 10);
+    this.wRun += (smooth(4.6, 7.2, hs) - this.wRun) * Math.min(1, p.dt * 6);
+    const w = this.wMove, run = this.wRun, walk = 1 - run;
+    const stride = 1.7 + hs * 0.32;                       // metres per full cycle (two steps)
+    if (w > 0.02) this.phase += p.dt * (hs / stride);
+    const u = this.phase - Math.floor(this.phase);
+    const K = Hero.cyc;
+    // per-leg channels: thigh (- forward), knee (+ bend), foot pitch relative to the ground (+ toes down)
+    const WT = [[0, -0.42], [0.12, -0.3], [0.3, 0.02], [0.55, 0.38], [0.68, 0.1], [0.85, -0.38], [1, -0.42]];
+    const WK = [[0, 0.06], [0.12, 0.26], [0.32, 0.08], [0.55, 0.38], [0.72, 1.05], [0.9, 0.22], [1, 0.06]];
+    const WF = [[0, -0.22], [0.1, 0], [0.42, 0], [0.58, 0.55], [0.72, 0.15], [0.92, -0.1], [1, -0.22]];
+    const RT = [[0, -0.55], [0.14, -0.15], [0.33, 0.55], [0.48, 0.42], [0.66, -0.55], [0.82, -0.95], [1, -0.55]];
+    const RK = [[0, 0.32], [0.14, 0.55], [0.33, 0.28], [0.48, 1.25], [0.64, 2.0], [0.82, 1.25], [1, 0.32]];
+    const RF = [[0, -0.05], [0.12, 0.05], [0.3, 0.45], [0.42, 0.75], [0.62, 0.45], [0.85, 0.05], [1, -0.05]];
+    const leg = (uu: number) => {
+      const t = walk * K(WT, uu) + run * K(RT, uu), k = walk * K(WK, uu) + run * K(RK, uu), f = walk * K(WF, uu) + run * K(RF, uu);
+      return { t: t * w, k: k * w + 0.03, a: -(t * w + k * w) + f * w };
     };
-    leg(THL, KNL, ANL, s, co, -1, 0); leg(THR, KNR, ANR, s2, co2, 1, 1);
-    // pelvis: bobs twice per stride (highest at mid-stance), rotates and rolls with the steps; torso and head counter it
-    const bob = (0.02 + 0.03 * run) * w * Math.cos(2 * ph);
-    const crouch = run * 0.035;
-    const pelY = 0.1 * w * (0.55 + run * 0.45) * Math.sin(ph), pelZ = 0.045 * w * Math.sin(ph + PI / 2);
-    const lean = 0.05 * w + 0.2 * run;
-    S(a, H, 0, pelY, pelZ);
-    S(a, SP, lean + 0.012 * Math.sin(c * 1.7) * (1 - w) + 0.02 * w * Math.sin(2 * ph + 0.5), -pelY * 1.15, -pelZ * 0.9);
-    S(a, HD, -lean * 0.85, -pelY * 0.5 + 0.05 * Math.sin(c * 0.5) * (1 - w), 0);
-    // arms counter-swing with the legs; elbows fold deeper when running and on the forward swing
-    const asw = A * 0.95, fold = (v: number) => 0.2 + 0.1 * w + run * 0.55 + run * 0.4 * Math.max(0, -v);
-    S(a, SHL, asw * s + 0.05 * Math.sin(c * 1.4) * (1 - w), 0, -0.1 - run * 0.12 - (1 - w) * 0.03); S(a, ELL, -fold(s), 0, 0);
-    S(a, SHR, -asw * s - 0.05 * Math.sin(c * 1.4 + 1) * (1 - w), 0, 0.1 + run * 0.12 + (1 - w) * 0.03); S(a, ELR, -fold(-s), 0, 0);
+    const L = leg(u), R = leg((u + 0.5) % 1);
+    S(a, THL, L.t, 0, -0.03 * w); S(a, KNL, L.k, 0, 0); S(a, ANL, L.a, 0, 0);
+    S(a, THR, R.t, 0, 0.03 * w); S(a, KNR, R.k, 0, 0); S(a, ANR, R.a, 0, 0);
+    // pelvis: walk rises at mid-stance; run compresses at mid-stance and floats in the flight phase
+    const ph2 = u * 4 * PI;
+    const bob = w * (walk * 0.028 * -Math.cos(ph2) + run * (-0.055 * Math.cos(ph2 - 0.25 * 4 * PI * 0.17) - 0.04));
+    const twist = w * (0.13 + 0.07 * run) * Math.sin(u * 2 * PI), roll = w * (0.05 * walk + 0.03 * run) * Math.sin(u * 2 * PI + PI / 2);
+    const lean = w * (0.06 + 0.3 * run);
+    const idle = 1 - w, breathe = Math.sin(c * 1.6);
+    S(a, H, 0.0, twist, roll + idle * 0.02 * Math.sin(c * 0.5));
+    S(a, SP, lean * 0.7 + idle * 0.015 * breathe, -twist * 1.4, -roll * 0.8);
+    S(a, HD, -lean * 0.6 - idle * 0.01 * breathe, -twist * 0.4 + idle * 0.06 * Math.sin(c * 0.45), 0);
+    // arms counter the opposite leg; walk: loose and nearly straight, run: elbows ~90 deg pumping across the body
+    const armL = R.t, armR = L.t;
+    const sw = walk * 0.85 + run * 1.15;
+    const elW = (x: number) => -0.22 - 0.3 * Math.max(0, -x), elR = -1.5;
+    S(a, SHL, armL * sw - idle * 0.02 * breathe, run * 0.15 * w, -0.08 - 0.05 * run - idle * 0.04);
+    S(a, ELL, (walk * elW(armL) + run * elR) * w - idle * 0.15, 0, 0);
+    S(a, SHR, armR * sw - idle * 0.02 * breathe, -run * 0.15 * w, 0.08 + 0.05 * run + idle * 0.04);
+    S(a, ELR, (walk * elW(armR) + run * elR) * w - idle * 0.15, 0, 0);
     // secondary joints get their own motion targets (springs add the follow-through)
-    const wag = 0.3 * Math.sin(c * 1.8), acc = clamp(-this.acc * 0.012, -0.4, 0.4);
+    const wag = 0.3 * Math.sin(c * 1.8), acc = clamp(-this.acc * 0.012, -0.4, 0.4), st = Math.sin(u * 2 * PI);
     S(a, S1, 0.16 + hs * 0.05 + acc, 0, 0.04 * Math.sin(c * 2.1)); S(a, S2, 0.08 + hs * 0.03 + acc * 0.7, 0, 0.08 * Math.sin(c * 2.7) * (0.4 + w));
-    S(a, T1, 0.2 + hs * 0.045 + acc + 0.04 * Math.sin(2 * ph) * w, 0, 0.05 * Math.sin(ph) * w + 0.03 * wag * (1 - w));
-    S(a, T2, 0.1 + hs * 0.03 + acc * 0.8, 0, 0.1 * Math.sin(ph + 1.2) * w);
-    return HIP + bob - crouch;
+    S(a, T1, 0.2 + hs * 0.045 + acc + 0.05 * Math.cos(ph2) * w, 0, 0.06 * st * w + 0.03 * wag * (1 - w));
+    S(a, T2, 0.1 + hs * 0.03 + acc * 0.8, 0, 0.1 * Math.sin(u * 2 * PI + 1.2) * w);
+    return HIP + bob;
+  }
+
+  /** periodic keyframe curve (keys sorted by u in 0..1, last = first), smooth cosine interpolation */
+  private static cyc(k: number[][], u: number): number {
+    let i = 0; while (i < k.length - 2 && u > k[i + 1][0]) i++;
+    const [u0, v0] = k[i], [u1, v1] = k[i + 1], t = (u - u0) / Math.max(1e-6, u1 - u0), e = (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, t)))) / 2;
+    return v0 + (v1 - v0) * e;
   }
 
   /** jump / fall tuck */

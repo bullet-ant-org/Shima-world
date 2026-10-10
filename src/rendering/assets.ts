@@ -188,7 +188,7 @@ export class Assets {
   /** night in 0..1 drives emissive + glow materials */
   setNight(night: number): void {
     this.building.emissiveIntensity = 0.03 + 2.2 * night;
-    this.lights.color.setScalar(0.1 + 1.15 * night);
+    this.lights.color.setScalar(0.5 + 0.75 * night); // signs and shop interiors stay readable by day, glow at night
     this.glow.color.setScalar(0.35 + 0.9 * night);
     this.pillarGlow.color.setRGB(0.25 + 0.5 * night, 0.9, 1);
     this.crystal.emissiveIntensity = 0.25 + 1.4 * night;

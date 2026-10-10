@@ -78,8 +78,11 @@ function catalog(): Record<Theme, BuildingSpec[]> & { low: BuildingSpec[] } {
   for (let i = 0; i < 3; i++) fin.push(S('bank', pick([34, 38]), pick([28, 32]), 6));
   for (let i = 0; i < 4; i++) fin.push(S(pick<Tpl>(['step', 'twin', 'round', 'podium']), pick([30, 36, 42]), pick([30, 36, 42]), ri(34, 70), pick([3, 3, 2, 6, 0, 7])));
   fin.push(S('broadcast', 30, 30, ri(42, 62)));
+  for (let i = 0; i < 4; i++) fin.push(S('hq', pick([34, 40]), pick([34, 40]), ri(55, 85), i, ri(0, 7)));
   for (let i = 0; i < 6; i++) ent.push(S('club', pick([26, 30, 34]), pick([24, 28]), 4, ri(0, 3)));
   for (let i = 0; i < 2; i++) ent.push(S('market', 48, 34, 2));
+  for (let i = 0; i < 9; i++) ent.push(S('shop', pick([16, 18, 20]), pick([14, 16]), 2, [1, 2, 3, 4, 1, 2, 3, 3, 4][i]));
+  for (let i = 0; i < 3; i++) ent.push(S('club', pick([26, 30]), pick([24, 28]), 4, ri(0, 3)));
   for (let i = 0; i < 5; i++) ent.push(S('office', pick([22, 26, 30]), pick([22, 26, 30]), ri(14, 30)));
   for (let i = 0; i < 4; i++) ent.push(S(pick<Tpl>(['round', 'wedge', 'step', 'L']), pick([24, 30, 34]), pick([24, 30, 34]), ri(14, 36)));
   for (let i = 0; i < 12; i++) res.push(S(pick<Tpl>(['box', 'box', 'L', 'wedge', 'podium']), pick([18, 22, 26, 30]), pick([18, 22, 26, 30]), ri(6, 16), ri(0, 7), ri(0, 7), r() < 0.5));
@@ -89,11 +92,14 @@ function catalog(): Record<Theme, BuildingSpec[]> & { low: BuildingSpec[] } {
   for (let i = 0; i < 2; i++) old.push(S('market', 48, 34, 2));
   for (let i = 0; i < 5; i++) old.push(S(pick<Tpl>(['box', 'L']), pick([18, 22]), pick([18, 22]), ri(3, 6), ri(0, 7), ri(0, 7), true));
   for (let i = 0; i < 5; i++) com.push(S('dealer', pick([40, 46]), pick([30, 34]), 2));
+  for (let i = 0; i < 8; i++) com.push(S('shop', pick([18, 20, 22]), pick([14, 16]), 2, [0, 0, 0, 2, 4, 0, 2, 1][i]));
   for (let i = 0; i < 6; i++) com.push(S('office', pick([24, 30, 34]), pick([24, 30, 34]), ri(10, 24)));
   for (let i = 0; i < 3; i++) com.push(S('club', pick([28, 32]), pick([24, 28]), 4, ri(0, 3)));
   for (let i = 0; i < 4; i++) com.push(S(pick<Tpl>(['box', 'L', 'podium']), pick([24, 30, 36]), pick([24, 30, 36]), ri(8, 18), ri(0, 7), ri(0, 7), true));
   for (let i = 0; i < 14; i++) low.push(S(pick<Tpl>(['box', 'box', 'L', 'wedge']), pick([14, 18, 22]), pick([14, 18, 22]), ri(3, 8), ri(0, 7), ri(0, 7), r() < 0.75));
   for (let i = 0; i < 4; i++) low.push(S('machiya', pick([18, 22]), 12, ri(2, 3), ri(0, 2)));
+  for (let i = 0; i < 8; i++) low.push(S('shop', pick([14, 16, 18]), 14, 2, i % 5));
+  for (let i = 0; i < 4; i++) res.push(S('shop', 16, 14, 2, [3, 4, 2, 1][i]));
   return { fin, ent, res, old, com, low };
 }
 
@@ -123,7 +129,7 @@ function buildCityLots(): void {
       if (!fits.length) fits = fit(cat.low);
       if (!fits.length) continue;
       // big signature buildings get first pick of every lot that can hold them (they'd otherwise lose to the many small designs)
-      const BIG: Record<Theme, string[]> = { old: ['fortress', 'market'], ent: ['market', 'club'], com: ['dealer'], fin: ['bank'], res: [] };
+      const BIG: Record<Theme, string[]> = { old: ['fortress', 'market'], ent: ['market', 'club'], com: ['dealer'], fin: ['bank', 'hq'], res: [] };
       if (BIG[theme].length && rng() < (theme === 'old' ? 0.7 : 0.35)) { const big = fit(list.filter((q) => BIG[theme].includes(q.tpl))); if (big.length) fits = big; }
       if (count.broadcast >= 4) fits = fits.filter((q) => q.tpl !== 'broadcast').length ? fits.filter((q) => q.tpl !== 'broadcast') : fits;
       const lessMachiya = fits.filter((q) => q.tpl !== 'machiya' || rng() < 0.4);
@@ -131,9 +137,31 @@ function buildCityLots(): void {
       const spec = fits[Math.floor(rng() * fits.length)];
       const hr = Math.max(spec.w, spec.d) / 2;
       if (Math.hypot(x - SPIRE.x, z - SPIRE.z) < 80 || near(x, z, hr * 1.05)) continue;
-      const ry = Math.atan2(-Math.cos(a), -Math.sin(a)) + (rng() - 0.5) * 0.08;
-      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'bank' ? 30 : spec.tpl === 'market' || spec.tpl === 'dealer' ? 12 : spec.tpl === 'fortress' ? 30 : spec.fl * 3.6 + 8) };
+      let ry = Math.atan2(-Math.cos(a), -Math.sin(a)) + (rng() - 0.5) * 0.08;
+      if (['shop', 'club', 'dealer', 'bank', 'market', 'hq'].includes(spec.tpl)) {    // storefronts face their street
+        const nn = NET.nearest(x, z, 70, ['avenue', 'street']);
+        if (nn) ry = Math.atan2(nn.path.x[nn.i] - x, nn.path.z[nn.i] - z);
+      }
+      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'bank' ? 30 : spec.tpl === 'market' || spec.tpl === 'dealer' ? 12 : spec.tpl === 'fortress' ? 30 : spec.tpl === 'shop' ? 8.5 : spec.tpl === 'hq' ? spec.fl * 3.6 + 50 : spec.fl * 3.6 + 8) };
       placed.push(b); BUILDINGS.push(b); count[spec.tpl] = (count[spec.tpl] ?? 0) + 1;
+      const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b);
+    }
+  }
+  // infill: small shops and low-rises squeezed into the gaps along the roads, facing the nearest street
+  const small = [...cat.low, ...cat.com.filter((q) => q.tpl === 'shop'), ...cat.ent.filter((q) => q.tpl === 'shop')];
+  for (let r = 110; r < 860; r += 11) {
+    const dTheta = 13 / r;
+    for (let a = hash2(Math.floor(r), 9) * dTheta; a < TAU; a += dTheta) {
+      const x = C.x + Math.cos(a) * r, z = C.z + Math.sin(a) * r, room = NET.edgeDist(x, z, 40);
+      if (room < 5 || room > 26 || Math.hypot(x - SPIRE.x, z - SPIRE.z) < 80) continue;
+      const fits = small.filter((s) => Math.max(s.w, s.d) / 2 + 1 <= room);
+      if (!fits.length) continue;
+      const spec = fits[Math.floor(rng() * fits.length)], hr = Math.max(spec.w, spec.d) / 2;
+      if (near(x, z, hr * 1.02)) continue;
+      const nn = NET.nearest(x, z, 45, ['avenue', 'street']);
+      const ry = nn ? Math.atan2(nn.path.x[nn.i] - x, nn.path.z[nn.i] - z) : Math.atan2(-Math.cos(a), -Math.sin(a));
+      const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + (spec.tpl === 'shop' ? 8.5 : spec.fl * 3.6 + 8) };
+      placed.push(b); BUILDINGS.push(b);
       const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b);
     }
   }

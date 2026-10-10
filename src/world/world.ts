@@ -4,10 +4,10 @@ import { Assets } from '../rendering/assets';
 import { InstancePools, type PoolEntry } from '../rendering/instancing';
 import type { OutlineSpec } from '../rendering/outline';
 import {
-  benchGeo, barnGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
+  benchGeo, barnGeo, isSignature, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
-import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered } from './layout';
+import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked } from './layout';
 import {
   CHUNK, GOD, HILL, ISLANDS, LAKE, RICE, SPIRE, VOLCANO, heightAt, island, islandAt, lavaAt, mulberry32, noise2, riverX, sstep, type IslandId,
 } from './terrain';
@@ -532,6 +532,44 @@ export class World {
     return g;
   }
 
+  private furn: Record<string, Pair> | null = null;
+  private dressStreets(cx: number, cz: number, rnd: () => number, put: (b: Batch, geo: THREE.BufferGeometry, mat: THREE.Material, c?: boolean) => void): void {
+    const A = this.assets;
+    const F = (this.furn ??= {
+      tree0: streetTreeGeo(0), tree1: streetTreeGeo(1), tree2: streetTreeGeo(2), can: trashcanGeo(), bags: trashbagGeo(),
+      vend0: vendingGeo(0), vend1: vendingGeo(1), vend2: vendingGeo(2), hyd: hydrantGeo(), plant: planterGeo(), bus: busStopGeo(),
+    });
+    const B: Record<string, Batch> = {};
+    const add = (k: string, x: number, z: number, ry: number) => { (B[k] ??= new Batch()).add(x, heightAt(x, z) + 0.32, z, ry, 1, 1, 1); };
+    for (const sg of NET.segsIn(cx, cz)) {
+      const p = sg.path, i = sg.i;
+      if ((p.kind !== 'avenue' && p.kind !== 'street') || (p.junc && (p.junc[i] || p.junc[i + 1]))) continue;
+      const x = p.x[i], z = p.z[i], nx = -p.tz[i], nz = p.tx[i], hw = p.width / 2, side = (i >> 1) & 1 ? 1 : -1;
+      const sx = (off: number, s2 = side) => x + nx * (hw + off) * s2, sz = (off: number, s2 = side) => z + nz * (hw + off) * s2;
+      const faceRoad = (s2 = side) => Math.atan2(-nx * s2, -nz * s2);
+      if (i % 2 === 0) { const s2 = (i >> 1) & 1 ? 1 : -1; add('tree' + (p.kind === 'avenue' && p.id % 2 ? 1 : (p.id % 4 === 0 ? 2 : 0)), sx(3.2, s2), sz(3.2, s2), rnd() * 6); }
+      const r = rnd();
+      if (r < 0.14) add('can', sx(1.0), sz(1.0), faceRoad());
+      else if (r < 0.25) add('bags', sx(3.6), sz(3.6), rnd() * 6);
+      else if (r < 0.34) add('vend' + Math.floor(rnd() * 3), sx(3.7), sz(3.7), faceRoad());
+      else if (r < 0.39) add('hyd', sx(0.8), sz(0.8), 0);
+      else if (r < 0.47) add('plant', sx(2.4), sz(2.4), faceRoad() + Math.PI / 2);
+      else if (r < 0.5 && p.kind === 'avenue') add('bus', sx(2.6), sz(2.6), faceRoad() + Math.PI);
+    }
+    // pocket parks on open paved ground between the blocks: tree clusters, planters, benches, vending machines
+    const ox = cx * CHUNK, oz = cz * CHUNK;
+    for (let k = 0; k < 40; k++) {
+      const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, r = rnd();
+      if (blocked(x, z) || NET.edgeDist(x, z, 10) < 6 || heightAt(x, z) < 1) continue;
+      if (r < 0.55) (B.parkTree ??= new Batch()).add(x, heightAt(x, z), z, rnd() * 6, 1 + rnd() * 0.5, 1 + rnd() * 0.6, 1 + rnd() * 0.5);
+      else if (r < 0.7) add('plant', x, z, rnd() * 6);
+      else if (r < 0.85) (B.bench ??= new Batch()).add(x, heightAt(x, z), z, rnd() * 6, 1, 1, 1);
+      else if (r < 0.92) add('vend' + Math.floor(rnd() * 3), x, z, rnd() * 6);
+    }
+    F.parkTree ??= streetTreeGeo(0); F.bench ??= benchGeo();
+    for (const [k, b] of Object.entries(B)) { put(b, F[k].lit, A.props, k.startsWith('tree') || k === 'parkTree' || k === 'bus' || k.startsWith('vend')); if (F[k].lights) put(b, F[k].lights!, A.lights); }
+  }
+
   private buildChunk(cx: number, cz: number, ring: number, inst: PoolEntry[]): THREE.Group {
     const A = this.assets;
     const put = (b: Batch, geo: THREE.BufferGeometry, mat: THREE.Material, c = false, ol = 0) => b.commit(this.pools, geo, mat, c, inst, ol ? { geo, width: ol } : null);
@@ -567,10 +605,11 @@ export class World {
 
     // detailed buildings only in the nearest ring (the always-resident far versions cover everything else). Detailed geometry is expensive to
     // generate, so at most one new design is built per chunk build; chunks with leftovers are upgraded a frame at a time.
-    if (ring === 0 && this.nearDetail) {
+    if (ring === 0) {
       let built = 0;
       for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
         for (const b of buildingsNear(ox + i * 64 + 1, oz + j * 64 + 1)) {
+          if (!this.nearDetail && !isSignature(b.spec)) continue;
           if (!hasBuildingDetail(b.spec)) { if (built >= 1) { this.missed++; continue; } built++; }
           const g = buildingGeo(b.spec, true), one = new Batch(); one.add(b.x, 3, b.z, b.ry, 1, 1, 1);
           one.commit(this.pools, g.lit, A.props, true, inst, this.outlines ? { geo: buildingGeo(b.spec, false).lit, width: 0.12 } : null);
@@ -579,6 +618,9 @@ export class World {
       }
     }
     if (ring === 2) return grp; // far ring: terrain, roads and city silhouettes only
+
+    // ---- city streets: trees in grates, bins, bags, vending machines, hydrants, planters, bus stops (near ring only) ----
+    if (ring === 0 && (islandAt(ox + 64, oz + 64)?.id === 'city')) this.dressStreets(cx, cz, rnd, put);
 
     const zone = islandAt(ox + 64, oz + 64)?.id ?? islandAt(ox, oz)?.id ?? islandAt(ox + CHUNK, oz + CHUNK)?.id
       ?? islandAt(ox + CHUNK, oz)?.id ?? islandAt(ox, oz + CHUNK)?.id ?? 'sea';

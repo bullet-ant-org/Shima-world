@@ -3,7 +3,7 @@ import * as THREE from 'three/webgpu';
 import { Hero, type HeroAssets, type Mode } from '../entities/hero';
 import type { CharacterSpec } from '../entities/character';
 
-export type Demo = 'idle' | 'walk' | 'fly';
+export type Demo = 'idle' | 'walk' | 'run' | 'fly';
 
 export class Preview {
   private r!: THREE.WebGPURenderer;
@@ -97,8 +97,8 @@ export class Preview {
     this.cam.lookAt(0, ty, 0);
     if (this.hero) {
       const mode: Mode = this.demo === 'fly' ? 'fly' : 'ground';
-      const walk = this.demo === 'walk';
-      this.hero.pose({ dt, mode, hs: walk ? 3.6 : 0, speed: this.demo === 'fly' ? 22 : walk ? 3.6 : 0, vy: 0, grounded: this.demo !== 'fly', boost: false, bank: 0 });
+      const walk = this.demo === 'walk' || this.demo === 'run', v = this.demo === 'run' ? 7.8 : 3.6;
+      this.hero.pose({ dt, mode, hs: walk ? v : 0, speed: this.demo === 'fly' ? 22 : walk ? v : 0, vy: 0, grounded: this.demo !== 'fly', boost: false, bank: 0 });
       this.hero.root.position.y = this.demo === 'fly' ? 0.4 : 0;
       this.hero.root.rotation.y = 0;
     }
