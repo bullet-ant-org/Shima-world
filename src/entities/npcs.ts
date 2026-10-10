@@ -152,7 +152,7 @@ function bodyMaterial(ramp: THREE.Texture, SX: number): THREE.MeshToonNodeMateri
 // ---------------------------------------------------------------------------------------------------------------------
 // routines
 // ---------------------------------------------------------------------------------------------------------------------
-const enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse }
+export enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse }
 interface Slot { x: number; z: number; ry: number; y0: number; act: Act; h0: number; h1: number; p: number; v: number; agent: number; seed: number }
 
 const SKIN = [0xffe0c8, 0xf7d0b0, 0xe8b890, 0xc89070, 0x9a6a4a, 0xffd8c0].map((h) => new THREE.Color(h));
@@ -207,6 +207,7 @@ interface Agent {
 }
 
 const WALK_KINDS = ['avenue', 'street', 'stone'];
+const PINNED = -2;   // placed by an interior: fixed spot, never recycled by the street logic
 
 export class Townsfolk {
   readonly group = new THREE.Group();
@@ -266,6 +267,16 @@ export class Townsfolk {
     this.m.makeScale(0, 0, 0); this.meshes[a.v].setMatrixAt(a.k, this.m);
     this.free[a.v].push(this.ag.indexOf(a));
   }
+
+  /** a person placed by hand (shopkeepers, diners...) at an absolute height; returns false when the pool is exhausted */
+  pin(x: number, y: number, z: number, yaw: number, act: Act, v = -1, lift = 0): boolean {
+    const vv = v >= 0 ? v : this.rnd() < 0.5 ? 0 : 1;
+    const a = this.take(vv) ?? this.take(vv === 2 ? 0 : 1 - vv); if (!a) return false;
+    a.slot = PINNED; a.act = act; a.path = null; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.lift = lift;
+    if (act === Act.Sit) a.sc = Math.max(a.sc, 0.93);
+    return true;
+  }
+  unpinAll(): void { for (const a of this.ag) if (a.on && a.slot === PINNED) this.release(a); }
 
   /** put a walker on the nearest walkable path around (x, z) */
   private toPath(a: Agent, x: number, z: number, r = 40): boolean {
@@ -364,7 +375,7 @@ export class Townsfolk {
     // walkers: keep the streets as busy as the hour says
     const want = Math.round((this.free[0].length + this.free[1].length + this.countWalkers()) * 0.85 * this.crowd(h));
     let walkers = this.countWalkers();
-    for (const a of this.ag) if (a.on && a.slot < 0 && Math.hypot(a.x - px, a.z - pz) > R + 40) { this.release(a); walkers--; this.counts.recycled++; }
+    for (const a of this.ag) if (a.on && a.slot === -1 && Math.hypot(a.x - px, a.z - pz) > R + 40) { this.release(a); walkers--; this.counts.recycled++; }
     for (let t = 0; t < 24 && walkers < want; t++) {
       const ang = this.rnd() * 6.283, d = (first ? 12 : 60) + this.rnd() * (R - (first ? 12 : 60));
       const x = px + Math.cos(ang) * d, z = pz + Math.sin(ang) * d;
@@ -374,7 +385,7 @@ export class Townsfolk {
       walkers++;
     }
   }
-  private countWalkers(): number { let n = 0; for (const a of this.ag) if (a.on && a.slot < 0) n++; return n; }
+  private countWalkers(): number { let n = 0; for (const a of this.ag) if (a.on && a.slot === -1) n++; return n; }
 
   update(dt: number, px: number, pz: number, hour: number): void {
     this.frame++; this.hour = hour;
@@ -388,14 +399,14 @@ export class Townsfolk {
       const d = Math.hypot(a.x - px, a.z - pz);
       let step = dt;
       if (d > 60) { a.acc += dt; red++; if ((this.frame + a.k) % 3) continue; step = a.acc; a.acc = 0; } else { full++; a.acc = 0; }
-      if (a.slot < 0 && a.path) this.walk(a, step, px, pz);
+      if (a.slot === -1 && a.path) this.walk(a, step, px, pz);
       a.ph += step;
       // glance at the player when they come close
       const tgt = d < 7 ? Math.atan2(px - a.x, pz - a.z) - a.yaw : 0;
       const wrapped = Math.atan2(Math.sin(tgt), Math.cos(tgt));
       a.look += (Math.max(-1.1, Math.min(1.1, wrapped)) - a.look) * Math.min(1, step * 3);
       const bob = this.animate(a);
-      this.pv.set(a.x, heightAt(a.x, a.z) + a.lift + bob * a.sc, a.z);
+      this.pv.set(a.x, (a.slot === PINNED ? a.y : heightAt(a.x, a.z)) + a.lift + bob * a.sc, a.z);
       this.q.setFromEuler(this.e.set(0, a.yaw, 0));
       this.sv.setScalar(a.sc);
       this.m.compose(this.pv, this.q, this.sv);
@@ -414,7 +425,7 @@ export class Townsfolk {
     const A = this.jA[a.v], B = this.jB[a.v], C = this.jC[a.v], k = a.k, t = a.ph;
     let hipL = 0, knL = 0.04, hipR = 0, knR = 0.04, shL = 0.05, elL = -0.12, shR = 0.05, elR = -0.12, rL = 0.06, rR = 0.06, sp = 0.02, hd = a.look, bob = 0;
     const br = Math.sin(t * 1.7);
-    switch (a.slot < 0 ? Act.Walk : a.act) {
+    switch (a.slot === -1 ? Act.Walk : a.act) {
       case Act.Walk: {
         const f = a.speed / 1.55, u = t * 2 * Math.PI * f * 0.95, s = Math.sin(u), c = Math.cos(u);
         hipL = -0.42 * s; hipR = 0.42 * s;

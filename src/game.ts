@@ -7,6 +7,7 @@ import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
 import { Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Townsfolk } from './entities/npcs';
+import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
 import { Herd } from './entities/horse';
 import { loadBaseModel } from './entities/humanoid';
 import { Grass } from './rendering/grass';
@@ -45,6 +46,9 @@ export class Game {
   private grass: Grass | null = null;
   private grassGood = 0;
   private npc!: Townsfolk;
+  private interiors!: Interiors;
+  private nearDoor: Door | null = null;
+  private camSnap = false;
   private traffic!: TrafficSystem;
   private skyTraffic!: TrafficSystem;
   private remotes!: RemotePlayers;
@@ -114,6 +118,7 @@ export class Game {
       this.scene.add(this.grass.mesh);
       for (let i = 0; i < 40; i++) this.grass.update(this.player.x, this.player.z, 200);
     }
+    this.interiors = new Interiors(this.scene, this.assets);
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
@@ -161,10 +166,33 @@ export class Game {
     this.gr.setAnimationLoop((t) => this.frame(t));
   }
 
+  private fade(): void {
+    const f = document.getElementById('fade'); if (!f) return;
+    f.style.transition = 'none'; f.style.opacity = '1'; void f.offsetWidth;
+    f.style.transition = 'opacity .45s'; f.style.opacity = '0';
+  }
+
+  private enterRoom(door: Door): void {
+    const P = this.player, r = this.interiors.enter(door, this.npc);
+    P.room = r.room; P.x = r.x; P.y = r.y; P.z = r.z; P.yaw = r.yaw; P.vx = P.vy = P.vz = 0; P.grounded = true;
+    this.camYaw = 0; this.camPitch = 0.12; this.camD = 1.5; this.camSnap = true;
+    this.zoneEl.textContent = ROOM_NAMES[door.kind]; this.lastZone = '';
+    this.fade();
+  }
+
+  private exitRoom(): void {
+    const P = this.player, door = this.interiors.leave(this.npc);
+    P.room = null;
+    if (door) { P.teleport(door.x + Math.sin(door.ry) * 1.2, door.z + Math.cos(door.ry) * 1.2); P.yaw = door.ry; this.camYaw = door.ry + Math.PI; }
+    this.camPitch = 0.12; this.camSnap = true;
+    this.fade();
+  }
+
   /** Fast travel (test tool): jump to an island's spawn point and stream its terrain before the next frame. */
   teleportTo(index: number): void {
     const isl = ISLANDS[index];
     if (!isl) return;
+    if (this.interiors.inside) { this.interiors.leave(this.npc); this.player.room = null; }
     this.player.teleport(isl.spawn.x, isl.spawn.z);
     this.camYaw = 0; this.camPitch = 0.28;
     this.camera.position.set(this.player.x, this.player.y + 6, this.player.z + 8);
@@ -238,17 +266,23 @@ export class Game {
     this.camYaw -= I.lookX * 2.4 * dt + I.lookDX * 0.0055;
     this.camPitch = Math.max(-1.35, Math.min(1.45, this.camPitch + I.lookY * 1.6 * dt + I.lookDY * 0.0042));
     P.step(dt, I, this.camYaw, this.camPitch);
+    // doors: ENTER next to a shop / house / club door, EXIT (or walk out through the door) inside
+    const doorTap = I.wasPressed('KeyG') || I.wasPressed('BtnDoor');
+    const inside = this.interiors.inside;
+    this.nearDoor = !inside && P.mode === 'ground' && !P.mount && P.grounded ? this.interiors.near(P.x, P.z) : null;
+    if (inside) { if (doorTap || (this.interiors.atExit(P.x, P.z) && P.vz > 0.4)) this.exitRoom(); }
+    else if (this.nearDoor && doorTap) this.enterRoom(this.nearDoor);
     // zone banner + atmosphere target
     const isl = zoneAt(P.x, P.z) === 'sea' ? null : islandAt(P.x, P.z);
     const name = isl ? isl.name : '';
-    if (name !== this.lastZone) { this.lastZone = name; this.zoneEl.textContent = name; }
+    if (!P.room && name !== this.lastZone) { this.lastZone = name; this.zoneEl.textContent = name; }
     if (isl) this.zoneId = isl.id;
     this.updateFlightUi();
   }
 
   /** Buttons reflect the flight state: FLY<->LAND, BOOST appears while flying, JUMP/RUN become UP/DOWN. */
   private updateFlightUi(): void {
-    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0) | (P.mount ? 8 : 0) | (P.nearHorse ? 16 : 0);
+    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0) | (P.mount ? 8 : 0) | (P.nearHorse ? 16 : 0) | (this.nearDoor ? 32 : 0) | (P.room ? 64 : 0) | ((this.nearDoor?.seed ?? 0) << 8);
     if (key === this.uiKey) return;
     this.uiKey = key;
     const $ = (id: string) => document.getElementById(id)!;
@@ -260,6 +294,9 @@ export class Game {
     $('run-btn').textContent = P.flying ? 'DOWN' : P.mount ? 'GALLOP' : 'RUN';
     $('ride-btn').classList.toggle('show', !!(P.mount || P.nearHorse));
     $('ride-btn').textContent = P.mount ? 'DISMOUNT' : 'RIDE';
+    $('door-btn').classList.toggle('show', !!(this.nearDoor || P.room));
+    $('door-btn').textContent = P.room ? 'EXIT' : this.nearDoor ? 'ENTER ' + ROOM_NAMES[this.nearDoor.kind].toUpperCase() : 'ENTER';
+    $('fly-btn').style.visibility = P.room ? 'hidden' : '';
   }
 
   /** Trail, hover sparkles, landing dust, speed lines, ground ring and the screen-edge speed glow. */
@@ -318,11 +355,13 @@ export class Game {
     // pull in so walls / buildings never get between the camera and the character
     for (let i = 1; i <= 6; i++) {
       const t = (i / 6) * d, cx = fx + Math.sin(this.camYaw) * cp * t, cz = fz + Math.cos(this.camYaw) * cp * t, cy = fy + sp * t;
-      if (blockTop(cx, cz) > cy - 0.5) { d = Math.max(1.2, t - 0.6); break; }
+      const R = P.room;
+      if (R ? Math.abs(cx - R.cx) > R.hw - 0.3 || Math.abs(cz - R.cz) > R.hd - 0.3 || cy > R.y + R.h - 0.25 : blockTop(cx, cz) > cy - 0.5) { d = Math.max(R ? 0.6 : 1.2, t - 0.6); break; }
     }
     this.camD += (d - this.camD) * (1 - Math.exp(-dt * (d < this.camD ? 12 : 4)));
     const tx = fx + Math.sin(this.camYaw) * cp * this.camD, tz = fz + Math.cos(this.camYaw) * cp * this.camD, ty = fy + 0.25 + sp * this.camD;
-    const k = 1 - Math.exp(-dt * (P.flying ? 9 : 14));
+    const k = this.camSnap ? 1 : 1 - Math.exp(-dt * (P.flying ? 9 : 14));
+    if (this.camSnap) { this.camSnap = false; this.camD = d; }
     const c = this.camera.position;
     c.x += (tx - c.x) * k; c.z += (tz - c.z) * k; c.y += (Math.max(ty, heightAt(c.x, c.z) + 1.2) - c.y) * k;
     // speed sells the motion: widen the field of view while flying, a lot while boosting
@@ -376,7 +415,7 @@ export class Game {
       (this.rain.material as THREE.LineBasicMaterial).color.set(snow ? 0xffffff : 0xaecbff);
     }
     this.rainNow += (target - this.rainNow) * Math.min(1, dt * 0.25);
-    const on = this.rainNow > 0.05;
+    const on = this.rainNow > 0.05 && !this.player.room;
     this.rain.visible = on;
     if (!on) return;
     (this.rain.material as THREE.LineBasicMaterial).opacity = snow ? 0.9 : 0.15 + 0.4 * this.rainNow;

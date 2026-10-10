@@ -20,7 +20,7 @@ export class Input {
     };
     hold('jump-btn', (v) => (this.jumpBtn = v));
     hold('run-btn', (v) => (this.runBtn = v));
-    for (const [id, code] of [['fly-btn', 'BtnFly'], ['boost-btn', 'BtnBoost'], ['ride-btn', 'BtnRide']]) {
+    for (const [id, code] of [['fly-btn', 'BtnFly'], ['boost-btn', 'BtnBoost'], ['ride-btn', 'BtnRide'], ['door-btn', 'BtnDoor']]) {
       document.getElementById(id)!.addEventListener('pointerdown', () => this.tapped.add(code));
     }
     // look around by dragging anywhere on the right ~60% of the screen (no stick, no limits)

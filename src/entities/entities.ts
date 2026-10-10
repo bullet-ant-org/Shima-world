@@ -15,6 +15,8 @@ import type { Network } from '../network/network';
 
 const O = new THREE.Object3D();
 
+export interface Room { cx: number; cz: number; y: number; hw: number; hd: number; h: number; solids: number[][] }
+
 /** Player controller: walking, jumping, flying (hover / fly / boost) and the brace-slide when landing at speed. */
 export class Player {
   readonly hero: CharacterBody;
@@ -58,8 +60,35 @@ export class Player {
     this.yaw += step; this.yawRate = step / Math.max(dt, 1e-3);
   }
 
+  /** set while inside a building: an axis-aligned room (world centre, floor height, half extents) with furniture boxes */
+  room: Room | null = null;
+  roomFree(x: number, z: number): boolean {
+    const r = this.room!, lx = x - r.cx, lz = z - r.cz;
+    if (Math.abs(lx) > r.hw - 0.3 || Math.abs(lz) > r.hd - 0.3) return false;
+    for (const [x0, z0, x1, z1] of r.solids) if (lx > x0 - 0.25 && lx < x1 + 0.25 && lz > z0 - 0.25 && lz < z1 + 0.25) return false;
+    return true;
+  }
+  private stepRoom(dt: number, I: Input, sy: number, cy: number, mx: number, my: number): void {
+    const speed = I.run ? 5.2 : 2.8;
+    const tvx = (-sy * my + cy * mx) * speed, tvz = (-cy * my - sy * mx) * speed, k = 1 - Math.exp(-10 * dt);
+    this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
+    const nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
+    if (this.roomFree(nx, this.z)) this.x = nx; else this.vx = 0;
+    if (this.roomFree(this.x, nz)) this.z = nz; else this.vz = 0;
+    if (this.hspeed > 0.5) this.yaw = Math.atan2(this.vx, this.vz);
+    if (I.jump && this.grounded) { this.vy = 5; this.grounded = false; }
+    this.vy -= 22 * dt; this.y += this.vy * dt;
+    if (this.y <= this.room!.y) { this.y = this.room!.y; this.vy = 0; this.grounded = true; }
+  }
+
   /** One simulation step. camYaw/camPitch are the free-look camera angles (movement is camera-relative). */
   step(dt: number, I: Input, camYaw: number, camPitch: number): void {
+    if (this.room) {
+      I.wasPressed('KeyF'); I.wasPressed('BtnFly'); I.wasPressed('KeyR'); I.wasPressed('BtnRide');
+      this.mode = 'ground'; this.nearHorse = null; this.sliding = false;
+      this.stepRoom(dt, I, Math.sin(camYaw), Math.cos(camYaw), I.moveX, -I.moveY);
+      return;
+    }
     const flyA = I.wasPressed('KeyF'), flyB = I.wasPressed('BtnFly'), bstA = I.wasPressed('KeyB'), bstB = I.wasPressed('BtnBoost');
     const flyTap = flyA || flyB, boostTap = bstA || bstB;
     this.sliding = false;
