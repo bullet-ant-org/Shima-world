@@ -19,8 +19,8 @@ import { heightAt } from './terrain';
 import { Act, type Townsfolk } from '../entities/npcs';
 import type { Room } from '../entities/entities';
 
-export type RoomKind = 'auto' | 'elixir' | 'liquor' | 'ramen' | 'konbini' | 'house' | 'club';
-export const ROOM_NAMES: Record<RoomKind, string> = { auto: 'Auto Shop', elixir: 'Elixirs', liquor: 'Liquor Bar', ramen: 'Ramen', konbini: 'Konbini', house: 'House', club: 'Club' };
+export type RoomKind = 'auto' | 'elixir' | 'liquor' | 'ramen' | 'konbini' | 'house' | 'club' | 'temple' | 'tower';
+export const ROOM_NAMES: Record<RoomKind, string> = { auto: 'Auto Shop', elixir: 'Elixirs', liquor: 'Liquor Bar', ramen: 'Ramen', konbini: 'Konbini', house: 'House', club: 'Club', temple: 'Temple', tower: 'Tower Lobby' };
 const SHOP_KINDS: RoomKind[] = ['auto', 'elixir', 'liquor', 'ramen', 'konbini'];
 export interface Door { x: number; z: number; ry: number; kind: RoomKind; seed: number }
 

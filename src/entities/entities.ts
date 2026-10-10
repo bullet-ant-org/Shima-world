@@ -30,6 +30,10 @@ export class Player {
   yawRate = 0;
   /** one-shot / continuous FX requests read by the game */
   sliding = false; impact = 0;
+  /** out of energy: no running, galloping or boosting until it recovers */
+  tired = false;
+  /** vertical speed at the last touchdown (for fall damage) */
+  landVy = 0;
   herd: Herd | null = null;
   mount: Horse | null = null;
   /** a free horse close enough to mount (for the RIDE button) */
@@ -69,7 +73,7 @@ export class Player {
     return true;
   }
   private stepRoom(dt: number, I: Input, sy: number, cy: number, mx: number, my: number): void {
-    const speed = I.run ? 5.2 : 2.8;
+    const speed = I.run && !this.tired ? 5.2 : 2.8;
     const tvx = (-sy * my + cy * mx) * speed, tvz = (-cy * my - sy * mx) * speed, k = 1 - Math.exp(-10 * dt);
     this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
     const nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
@@ -117,7 +121,7 @@ export class Player {
         const turn = (2.8 - Math.min(1.6, h.speed * 0.09)) * dt;
         h.yaw += Math.max(-turn, Math.min(turn, d));
         this.yawRate = d;
-        target = (I.run ? 17 : mag > 0.6 ? 7.5 : 2.6) * (Math.abs(d) > 2.2 ? 0.25 : 1);
+        target = (I.run && !this.tired ? 17 : mag > 0.6 ? 7.5 : 2.6) * (Math.abs(d) > 2.2 ? 0.25 : 1);
       }
       const k = 1 - Math.exp(-dt * (target > h.speed ? 1.5 : 2.6));
       h.speed += (target - h.speed) * k;
@@ -134,7 +138,7 @@ export class Player {
         this.x = h.x; this.z = h.z; this.yaw = h.yaw; return;
       }
       if (flyTap) { this.mode = 'fly'; this.grounded = false; this.vy = 6; this.boost = false; this.landing = false; return; }
-      const speed = I.run ? 7.8 : 3.6;
+      const speed = I.run && !this.tired ? 7.8 : 3.6;
       const tvx = (-sy * my + cy * mx) * speed, tvz = (-cy * my - sy * mx) * speed;
       const k = 1 - Math.exp(-10 * dt);
       this.vx += (tvx - this.vx) * k; this.vz += (tvz - this.vz) * k;
@@ -152,7 +156,7 @@ export class Player {
       const ground = Math.max(heightAt(this.x, this.z), 0) + NET.surfaceLift(this.x, this.z);
       if (I.jump && this.grounded) { this.vy = 7.5; this.grounded = false; }
       this.vy -= 22 * dt; this.y += this.vy * dt;
-      if (this.y <= ground) { this.y = ground; this.vy = 0; this.grounded = true; }
+      if (this.y <= ground) { if (!this.grounded) this.landVy = -this.vy; this.y = ground; this.vy = 0; this.grounded = true; }
       return;
     }
 
@@ -184,7 +188,8 @@ export class Player {
     const ground = heightAt(this.x, this.z), overLand = ground >= 0.5;
     const roof = blockTop(this.x, this.z);
     if (flyTap && overLand && roof === -Infinity) { this.landing = !this.landing; if (this.landing) this.boost = false; }
-    if (boostTap && !this.landing) this.boost = !this.boost;
+    if (boostTap && !this.landing && !this.tired) this.boost = !this.boost;
+    if (this.tired) this.boost = false;
 
     const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
     // camera-forward in 3D: look up and push forward to climb; look down to dive
@@ -217,6 +222,7 @@ export class Player {
       if (canLand && wantsLand && ny <= g2 + 0.02) {
         // touchdown: a diagonal / fast landing brakes with the legs, a gentle one just crouches
         this.y = g2; this.grounded = true; this.boost = false; this.landing = false;
+        this.landVy = Math.max(-this.vy, this.hspeed * 0.5);
         if (this.hspeed > 4) { this.mode = 'brace'; this.impact = 1; } else { this.mode = 'land'; this.landT = 0.4; this.vx = this.vz = 0; }
         return;
       }

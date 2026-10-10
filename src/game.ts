@@ -8,6 +8,7 @@ import { Sky } from './rendering/sky';
 import { Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Townsfolk } from './entities/npcs';
 import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
+import { Hud, type Stats } from './ui/hud';
 import { Herd } from './entities/horse';
 import { loadBaseModel } from './entities/humanoid';
 import { Grass } from './rendering/grass';
@@ -49,6 +50,9 @@ export class Game {
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
   private camSnap = false;
+  private hud2!: Hud;
+  stats: Stats = { hp: 100, energy: 100, honour: 25 };
+  private honourT = 0;
   private traffic!: TrafficSystem;
   private skyTraffic!: TrafficSystem;
   private remotes!: RemotePlayers;
@@ -119,6 +123,7 @@ export class Game {
       for (let i = 0; i < 40; i++) this.grass.update(this.player.x, this.player.z, 200);
     }
     this.interiors = new Interiors(this.scene, this.assets);
+    this.hud2 = new Hud(); this.hud2.doors = this.interiors.doors;
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
@@ -166,6 +171,23 @@ export class Game {
     this.gr.setAnimationLoop((t) => this.frame(t));
   }
 
+  /** health (fall / crash damage, slow regen), energy (running, galloping, flying and boosting cost it), honour (shrines, temples, courtesy) */
+  private updateStats(dt: number): void {
+    const P = this.player, S = this.stats, I = this.input;
+    const running = !P.flying && I.run && P.hspeed > 4.5;
+    const drain = P.flying ? (P.boost ? 9 : P.hspeed > 6 ? 2.5 : 1) : running ? 7 : 0;
+    S.energy = Math.max(0, Math.min(100, S.energy + (drain ? -drain : P.hspeed < 0.5 ? 14 : 8) * dt));
+    if (S.energy <= 0) P.tired = true; else if (S.energy > 25) P.tired = false;
+    if (P.landVy > 0) { const v = P.landVy; P.landVy = 0; if (v > 11) S.hp = Math.max(1, S.hp - (v - 11) * 3.2); }
+    S.hp = Math.min(100, S.hp + dt * 1.5);
+    // honour: time spent at shrines and temples (or inside one), and visiting shops; knocking into people costs it
+    this.honourT -= dt;
+    const near = this.interiors.near(P.x, P.z, 14), inShrine = this.interiors.inside?.door.kind === 'temple';
+    if (this.honourT <= 0 && (inShrine || near?.kind === 'temple')) { S.honour = Math.min(100, S.honour + 4); this.honourT = 20; }
+    if (this.npc.bumps > 0) { S.honour = Math.max(0, S.honour - this.npc.bumps * 1.5); this.npc.bumps = 0; }
+    this.hud2.update(P.x, P.z, P.yaw, this.camYaw, S, !!P.room);
+  }
+
   private fade(): void {
     const f = document.getElementById('fade'); if (!f) return;
     f.style.transition = 'none'; f.style.opacity = '1'; void f.offsetWidth;
@@ -174,6 +196,7 @@ export class Game {
 
   private enterRoom(door: Door): void {
     const P = this.player, r = this.interiors.enter(door, this.npc);
+    if (door.kind !== 'house') this.stats.honour = Math.min(100, this.stats.honour + 0.5);
     P.room = r.room; P.x = r.x; P.y = r.y; P.z = r.z; P.yaw = r.yaw; P.vx = P.vy = P.vz = 0; P.grounded = true;
     this.camYaw = 0; this.camPitch = 0.12; this.camD = 1.5; this.camSnap = true;
     this.zoneEl.textContent = ROOM_NAMES[door.kind]; this.lastZone = '';
@@ -230,11 +253,13 @@ export class Game {
 
     // 3. simulation
     this.updatePlayer(dt);
+    this.updateStats(dt);
     this.herd.update(dt, this.player.x, this.player.z);
     if (this.grass) { this.grass.mesh.visible = this.player.y - heightAt(this.player.x, this.player.z) < 60; if (this.grass.mesh.visible) this.grass.update(this.player.x, this.player.z, this.player.flying ? 3 : 6); }
     this.gameTime = (this.gameTime + dt * (24 / 600)) % 24; // 10-minute day
     this.applyTime();
     this.updateWeather(dt);
+    this.npc.playerSpeed = this.player.hspeed;
     this.npc.update(dt, this.player.x, this.player.z, this.gameTime);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
     this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);

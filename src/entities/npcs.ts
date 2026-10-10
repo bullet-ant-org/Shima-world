@@ -212,6 +212,10 @@ const PINNED = -2;   // placed by an interior: fixed spot, never recycled by the
 export class Townsfolk {
   readonly group = new THREE.Group();
   counts = { full: 0, reduced: 0, recycled: 0 };
+  /** times the player barged into someone at speed (read and reset by the game) */
+  bumps = 0;
+  private bumpCool = 0;
+  playerSpeed = 0;
   private meshes: THREE.InstancedMesh[] = [];
   private jA: THREE.InstancedBufferAttribute[] = []; private jB: THREE.InstancedBufferAttribute[] = []; private jC: THREE.InstancedBufferAttribute[] = [];
   private cols: { skin: THREE.InstancedBufferAttribute; top: THREE.InstancedBufferAttribute; bot: THREE.InstancedBufferAttribute; hair: THREE.InstancedBufferAttribute }[] = [];
@@ -313,7 +317,7 @@ export class Townsfolk {
     this.placeOnPath(a);
     // step aside for the player
     const dx = a.x - px, dz = a.z - pz, d = Math.hypot(dx, dz);
-    if (d < 1.4 && d > 1e-3) { a.x += (dx / d) * (1.4 - d); a.z += (dz / d) * (1.4 - d); }
+    if (d < 1.4 && d > 1e-3) { a.x += (dx / d) * (1.4 - d); a.z += (dz / d) * (1.4 - d); if (d < 0.8 && this.playerSpeed > 5.5 && this.bumpCool <= 0) { this.bumps++; this.bumpCool = 2; } }
   }
 
   /** continue onto another road / path that meets this one */
@@ -388,7 +392,7 @@ export class Townsfolk {
   private countWalkers(): number { let n = 0; for (const a of this.ag) if (a.on && a.slot === -1) n++; return n; }
 
   update(dt: number, px: number, pz: number, hour: number): void {
-    this.frame++; this.hour = hour;
+    this.frame++; this.hour = hour; this.bumpCool -= dt;
     this.scanT -= dt;
     const jumped = Math.hypot(px - this.lastX, pz - this.lastZ) > 80;    // teleported / travelled: fill the new place at once
     if (this.scanT <= 0 || jumped) { this.scan(px, pz, this.frame < 3 || jumped); this.scanT = 0.7; this.lastX = px; this.lastZ = pz; }
