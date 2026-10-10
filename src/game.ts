@@ -60,7 +60,7 @@ export class Game {
 
   gameTime = 17.2;            // hours, 0..24
   private camYaw = 0; private camPitch = 0.28;
-  camDist = 3.4; // third-person distance (raised by dev tooling for overview shots)
+  camDist = 2.9; // third-person distance (raised by dev tooling for overview shots)
   setCam(yaw: number, pitch: number): void { this.camYaw = yaw; this.camPitch = pitch; }
   private last = 0; private hudAcc = 0; private saveAcc = 0;
   private shadowsOn: boolean;
@@ -71,7 +71,7 @@ export class Game {
   private hud = document.getElementById('hud')!;
   private zoneEl = document.getElementById('zone')!;
   private lastZone = '';
-  private uiKey = -1; private glowQ = -1; private camD = 3.4;
+  private uiKey = -1; private glowQ = -1; private camD = 2.9;
   private trail = new Particles(260, 0.55); private spirits = new Particles(160, 1.3); private dust = new Particles(160, 1.1, -1.2, 0.97);
   private speedLines = new SpeedLines(); private hoverRing = new HoverRing();
   private speedEl = document.getElementById('speedfx')!;
@@ -309,7 +309,7 @@ export class Game {
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
     const sh = (P.flying ? 0.35 : 0.62) * (1 - ride * 0.5);                       // shoulder offset to the right
     const rx = Math.cos(this.camYaw), rz = -Math.sin(this.camYaw);
-    const lookH = P.flying ? 1.1 : 1.55 + ride * 0.95;
+    const lookH = P.flying ? 1.1 : 1.42 + ride * 0.95;
     const fx = P.x + rx * sh, fz = P.z + rz * sh, fy = P.y + lookH;
     // pull in so walls / buildings never get between the camera and the character
     for (let i = 1; i <= 6; i++) {

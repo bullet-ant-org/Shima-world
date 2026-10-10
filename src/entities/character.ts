@@ -60,16 +60,16 @@ export interface CharacterSpec {
   };
 }
 
-export const HAIR_STYLES = ['Spiky', 'Ponytail', 'Bob', 'Long Straight', 'Twin Tails', 'Braid', 'Odango Buns', 'Short Messy', 'Side Swept', 'Topknot', 'Wavy Long', 'Slick Short', 'Big Volume', 'Wild Spikes', 'Hime Cut', 'Undercut', 'Mohawk', 'Man Bun', 'Afro', 'Buzz Cut', 'Wolf Cut'];
+export const HAIR_STYLES = ['Spiky', 'Ponytail', 'Bob', 'Long Straight', 'Twin Tails', 'Braid', 'Odango Buns', 'Short Messy', 'Side Swept', 'Topknot', 'Wavy Long', 'Slick Short', 'Big Volume', 'Wild Spikes', 'Hime Cut', 'Undercut', 'Mohawk', 'Man Bun', 'Afro', 'Buzz Cut', 'Wolf Cut', 'Long Ponytail'];
 export const BEARDS = ['None', 'Stubble', 'Goatee', 'Full Beard', 'Moustache'];
 export const GLASSES = ['None', 'Round', 'Square', 'Shades'];
 export const WEAPONS = ['None', 'Katana (waist)', 'Back Sword', 'Twin Back Swords'];
 export const EYE_SHAPES = ['Round', 'Sharp', 'Sleepy', 'Cat'];
 export const MOUTHS = ['Smile', 'Neutral', 'Grin', 'Smirk', 'Pout'];
 export const EARS = ['Round', 'Elf', 'Cat'];
-export const TOPS = ['Jacket', 'Vest', 'Long Coat', 'Military Coat', 'Dress'];
+export const TOPS = ['Jacket', 'Vest', 'Long Coat', 'Military Coat', 'Dress', 'Knight Armor'];
 export const BOTTOMS = ['Skirt', 'Shorts', 'Pants', 'Hakama', 'Tights'];
-export const BOOTS = ['Tall Boots', 'Ankle Boots', 'Sneakers', 'Chunky Boots'];
+export const BOOTS = ['Tall Boots', 'Ankle Boots', 'Sneakers', 'Chunky Boots', 'Greaves'];
 export const HATS = ['None', 'Peaked Cap', 'Beret'];
 export const SHADOW_COLORS = ['#7a5ae0', '#3f6ad8', '#d83a9a', '#e8803a', '#6a3a2a', '#2fbf6a', '#1a1a30'];
 export const LIP_COLORS = ['#d0626f', '#b03a4a', '#7a2e3c', '#e88a8a', '#5a2a3a', '#ff6a9a', '#a85a4a'];
@@ -128,7 +128,13 @@ export function presets(): { name: string; spec: CharacterSpec }[] {
   idol.skin = '#ffe3d0'; idol.hair = { style: 4, color: '#27b9c9', tip: '#9af2ff', sheen: '#d8ffff', bangs: 1 };
   Object.assign(idol.face, { iris: '#27c4d8', eyeSize: 1.25, mouth: 0 });
   Object.assign(idol.outfit, { top: 0, bottom: 0, boots: 0, primary: '#2a2a36', secondary: '#4a4a5a', accent: '#d83a9a', trim: '#27c4d8', pants: '#1a1a24', scarf: false, wings: false, gloves: false });
+  const knight = defaultSpec('female');
+  knight.skin = '#ffe3d0'; knight.height = 1.0; knight.build = 0.15; knight.bust = 0.6; knight.shoulders = 0.3;
+  Object.assign(knight.face, { eyeShape: 0, eyeSize: 1.05, iris: '#6a5a8a', lash: 0.7, brow: 0.3, mouth: 1, blush: 0.35, shadowAmt: 0.15, lipAmt: 0.25, jaw: -0.3 });
+  knight.hair = { style: 21, color: '#f2a6c6', tip: '#ffc8dc', sheen: '#fff0f6', bangs: 1.05 };
+  Object.assign(knight.outfit, { top: 5, bottom: 4, boots: 4, primary: '#3a5a9a', secondary: '#4a6aaa', accent: '#5a3a22', trim: '#c8a24a', pants: '#2a2c36', bootColor: '#5a3a22', gloves: true, gloveColor: '#3a2a22', scarf: false, headband: false, wings: false, weapon: 1, hat: 0, earrings: false });
   return [
+    { name: 'Knight', spec: knight },
     { name: 'Courier', spec: defaultSpec('female') }, { name: 'Captain', spec: captain }, { name: 'Imp', spec: imp },
     { name: 'Idol', spec: idol }, { name: 'Samurai', spec: defaultSpec('male') }, { name: 'Ronin', spec: ronin },
   ];

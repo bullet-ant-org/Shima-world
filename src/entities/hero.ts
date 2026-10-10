@@ -248,7 +248,8 @@ export class Hero {
     const hipsRx = 0.152 + 0.022 * (1 - m) + 0.02 * bd, hipsRz = 0.108 + 0.01 * bd;
     const limb = 0.94 + 0.12 * bd + 0.08 * m, bust = male ? 0 : 0.1 + 0.3 * (spec.bust ?? 0.5);
     const coat = O.top !== 1, gloves = O.gloves;
-    const sleeve = O.top === 1 ? C.skin : C.jacket, sleeveL = O.top === 1 ? C.skin : C.jacketL;
+    const armor = O.top === 5, STEEL = 0xd6dae4, STEEL_D = 0x9aa0ae;
+    const sleeve = O.top === 1 ? C.skin : armor ? C.pants : C.jacket, sleeveL = O.top === 1 ? C.skin : armor ? shadeHex(O.pants, 1.25) : C.jacketL;
 
     this.root.add(this.rig);
     this.rig.scale.setScalar(0.92 * spec.height);
@@ -268,6 +269,11 @@ export class Hero {
       for (const sx of [-1, 1]) pel.push(loft({ path: [[sx * 0.07, -0.05, -0.15], [sx * 0.1, -0.3, -0.19], [sx * 0.12, -0.6, -0.2]], steps: 10, seg: 10, up: [0, 0, -1], r: (t) => [0.075 * (1 - 0.35 * t) * ends(t, 0, 0.12) + 0.004, 0.01], color: vgrad(C.jacket, C.jacketL, -0.05, -0.6) }));
     }
     if (O.top === 3) skirt(pel, pelIn, 0.13, -0.2, [waistRx + 0.016, waistRz + 0.016], [hipsRx + 0.11, hipsRz + 0.1], 7, 0.05, C.jacket, C.jacketL, C.red);
+    if (armor) { // knight's tunic: a split, lightly pleated skirt under a leather belt with a pouch
+      skirt(pel, pelIn, 0.12, -0.27, [waistRx + 0.02, waistRz + 0.02], [hipsRx + 0.055, hipsRz + 0.05], 4, 0.035, C.jacket, C.jacketL, C.gold);
+      pel.push(lathe(0.08, 0.03, (y) => waistRx + 0.03 + (0.08 - y) * 0.3, (y) => waistRz + 0.03 + (0.08 - y) * 0.3, 0x5a3a22, { seg: 22, steps: 2 }));
+      pel.push(box(0.05, 0.05, 0.015, 0.03, 0.055, waistRz + 0.05, C.gold), box(0.09, 0.09, 0.05, -0.13, -0.0, waistRz * 0.7 + 0.04, 0x6a4428));
+    }
     if (O.top === 4) skirt(pel, pelIn, 0.13, -0.37, [waistRx + 0.014, waistRz + 0.014], [0.3, 0.27], 9, 0.06, C.jacket, C.jacketL, C.red);
     if (O.bottom === 0 && O.top !== 4) skirt(pel, pelIn, 0.1, -0.3, [waistRx + 0.03, waistRz + 0.03], [0.29, 0.26], 12, 0.05, C.jacketD, C.jacket, C.red, true);
     if (O.bottom === 3) skirt(pel, pelIn, 0.1, -0.52, [waistRx + 0.03, waistRz + 0.03], [0.33, 0.29], 6, 0.06, C.pants, shadeHex(O.pants, 0.8), C.gold, true);
@@ -299,8 +305,8 @@ export class Hero {
     torso.push(lathe(0.095, 0.15, (y) => tRx(y) + 0.008, (y) => tRz(y) + 0.008, O.top === 3 ? C.red : O.top === 4 ? C.red : C.red, { seg: 26, steps: 2, shape: (_t, a, p) => tShape(p.y, a) }));
     torso.push(box(0.045, 0.045, 0.012, 0, 0.122, tRz(0.122) + 0.012, C.gold));
     // collar: white band + two folded points
-    torso.push(lathe(0.52, 0.625, keys([[0.52, 0.105], [0.625, 0.072]]), keys([[0.52, 0.088], [0.625, 0.064]]), C.white, { seg: 22, steps: 3 }));
-    for (const sx of [-1, 1]) {
+    if (!armor) torso.push(lathe(0.52, 0.625, keys([[0.52, 0.105], [0.625, 0.072]]), keys([[0.52, 0.088], [0.625, 0.064]]), C.white, { seg: 22, steps: 3 }));
+    if (!armor) for (const sx of [-1, 1]) {
       const a0 = PI / 2 - sx * 0.62, a1 = PI / 2 - sx * 0.1;
       torso.push(loft({ path: [tsurf(0.58, a0, 0.016), tsurf(0.54, (a0 + a1) / 2, 0.014), tsurf(0.49, a1, 0.012)], steps: 6, seg: 8, up: [Math.cos(a0), 0.4, Math.sin(a0)], r: (t) => [0.042 * (1 - 0.85 * t) + 0.003, 0.006], color: C.white }));
     }
@@ -313,6 +319,13 @@ export class Hero {
       torso.push(loft({ path: [tsurf(0.15, PI / 2 + 0.05, 0.004), tsurf(0.33, PI / 2 + 0.05, 0.006), tsurf(0.5, PI / 2 + 0.05, 0.005)], steps: 12, seg: 6, up: [0, 0, 1], r: () => [0.02, 0.005], color: C.jacketL }));
       for (const y of [0.22, 0.31, 0.4]) for (const sx of [-1, 1]) { const p = tsurf(y, PI / 2 - sx * 0.3, 0.008); torso.push(E(0.012, 0.012, 0.008, p[0], p[1], p[2], C.gold, 10)); }
       for (const sx of [-1, 1]) torso.push(E(0.07, 0.016, 0.06, sx * (shoulder - 0.02), 0.535, 0, C.jacketL, 14, 0, sx * -0.25), E(0.06, 0.006, 0.052, sx * (shoulder - 0.02), 0.548, 0, C.gold, 12, 0, sx * -0.25));
+    } else if (armor) {
+      // breastplate: a polished shell over the chest with a centre ridge, gorget at the neck, gold trim at the lower edge
+      const bp = (y: number) => y;
+      torso.push(lathe(0.2, 0.56, (y) => tRx(bp(y)) + 0.016, (y) => tRz(bp(y)) + 0.016, grad(STEEL_D, STEEL, (_t, a2, q) => 0.35 + 0.65 * Math.max(0, Math.sin(a2)) * (q.y > 0.3 ? 1 : 0.7)), { seg: 26, steps: 14, shape: (_t, a2, q) => tShape(q.y, a2) * (1 + 0.025 * Math.exp(-((a2 - PI / 2) ** 2) / 0.02)) }));
+      torso.push(lathe(0.215, 0.195, (y) => tRx(y) + 0.02, (y) => tRz(y) + 0.02, C.gold, { seg: 26, steps: 1, shape: (_t, a2, q) => tShape(q.y, a2) }));
+      torso.push(lathe(0.545, 0.64, keys([[0.545, 0.115], [0.64, 0.078]]), keys([[0.545, 0.095], [0.64, 0.07]]), grad(STEEL_D, STEEL, (t) => t), { seg: 22, steps: 3 }));
+      torso.push(lathe(0.6, 0.615, () => 0.08, () => 0.072, C.gold, { seg: 22, steps: 1 }));
     } else if (O.top === 4) {
       for (const y of [0.25, 0.35, 0.45]) { const p = tsurf(y, PI / 2, 0.006); torso.push(E(0.011, 0.011, 0.007, p[0], p[1], p[2], C.red, 10)); }
     } else {
@@ -333,8 +346,9 @@ export class Hero {
     if (O.top === 0 || O.top === 2) { const p = tsurf(0.36, PI / 2, 0.012); mesh([E(0.026, 0.026, 0.008, p[0], p[1], p[2], C.cyan, 10)], glow, spine); }
 
     // =============================== head ===============================
-    const head = pivot(spine, 0, 0.575, 0, HD);
-    head.scale.setScalar(1.42 * spec.head);
+    // realistic anime proportions (~7.5 heads tall): a modest head on a visible neck
+    const head = pivot(spine, 0, 0.6, 0, HD);
+    head.scale.setScalar(0.8 * spec.head);
     const wS = 1 + 0.1 * F_.width, jw = 1 + 0.16 * F_.jaw;
     const crownC = 0.228, crownR = 0.152;
     // anime lower face: narrow, tapering to a small rounded chin point; the Jaw slider moves the jaw angle, not the chin tip
@@ -362,6 +376,20 @@ export class Hero {
     };
     const headG = loft({ path: [[0, 0.03, 0], [0, crownC, 0], [0, crownC + crownR, 0]], steps: 52, seg: 32, r: (_t, p) => [hx(p.y), hz(p.y)], shape: headShape, color: C.skin });
     // front of the face at a given height (for placing the nose)
+    // anime faces read flat: bend the normals on the front of the face toward the viewer so the toon ramp doesn't shade the
+    // nose / mouth / chin area into a grey muzzle (the silhouette and outline keep the sculpted profile)
+    {
+      const P = headG.attributes.position, Nn = headG.attributes.normal, v = new THREE.Vector3();
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+        if (z <= 0 || y > 0.24) continue;
+        const w = Math.max(0, 1 - Math.abs(x) / 0.11) * Math.min(1, z / 0.05) * 0.75;
+        if (w <= 0) continue;
+        v.set(Nn.getX(i), Nn.getY(i), Nn.getZ(i)).lerp(new THREE.Vector3(x * 2.5, 0.15, 1).normalize(), w).normalize();
+        Nn.setXYZ(i, v.x, v.y, v.z);
+      }
+      Nn.needsUpdate = true;
+    }
     // painted face decal: the head's own front faces, lifted a hair along their normals, with planar UVs
     {
       const P = headG.attributes.position, Nn = headG.attributes.normal, I = headG.index!;
@@ -389,7 +417,7 @@ export class Hero {
     }
     const headGeos: THREE.BufferGeometry[] = [headG];
     // neck
-    headGeos.push(loft({ path: [[0, -0.06, -0.008], [0, 0.1, 0.0]], steps: 4, seg: 14, r: () => 0.047 + 0.008 * m, color: vgrad(C.skinS, C.skin, -0.06, 0.1) }));
+    headGeos.push(loft({ path: [[0, -0.2, -0.012], [0, -0.05, -0.006], [0, 0.1, 0.0]], steps: 6, seg: 16, r: (t) => (0.062 + 0.014 * m) * (1.12 - 0.12 * t), color: vgrad(C.skinS, C.skin, -0.2, 0.1) }));
     // ears
     const ens = F_.earSize, earX = 0.133 * wS - 0.006;
     if (F_.ears === 0) for (const sx of [-1, 1]) headGeos.push(loft({ path: [[sx * earX, 0.15, -0.01], [sx * (earX + 0.012), 0.205, -0.02]], steps: 8, seg: 10, r: (t) => { const k = ends(t, 0.4, 0.4); return [0.011 * ens * k, 0.024 * ens * k]; }, color: C.skin }));
@@ -456,6 +484,7 @@ export class Hero {
       for (let i = 0; i < n; i++) { const ph = ph0 + (ph1 - ph0) * (n === 1 ? 0.5 : i / (n - 1)); lock({ ph, th0: 0.4, th1, drop: drop * (1 + 0.12 * (((i * 7) % 3) - 1)), w: 0.07, th: 0.03, r1: 1.08, out: 0.03, ...o }); }
     };
     let hv = 1; // hair volume (hats scale with it)
+    let tailL1 = 0.33; // length of the first tail segment (T1 -> T2 pivot)
     switch (H_.style) {
       case 0: // Spiky
         cap(); fringe(5, 0.5, 0.92, { w: 0.045 }); sides(1.75, 0.02); back(8, 1.7, 2 * PI - 1.7, 2.05, 0.03, { r1: 1.02, w: 0.06 });
@@ -569,6 +598,15 @@ export class Hero {
         back(10, 1.3, 2 * PI - 1.3, 2.05, 0.14, { r1: 1.12, w: 0.065, curl: 0.03, out: 0.035 });
         spike(0.35, 0.3, 0.1, 0.05, 0.2); spike(0.4, -0.5, 0.09, 0.05, 0.2); spike(0.6, PI, 0.11, 0.055, 0.1);
         break;
+      case 21: { // Long ponytail: high tie, flowing to the waist, long face-framing locks
+        cap(); fringe(6, 0.55, 1.0, { w: 0.046 }); sides(1.75, 0.5, { w: 0.05, wave: 0.012, curl: -0.01 });
+        back(7, 1.9, 4.38, 2.0, 0, { r1: 1.0, w: 0.06 });
+        tailL1 = 0.55;
+        tail1.push(lathe(0.02, -0.02, () => 0.045, () => 0.045, C.band, { seg: 12, steps: 2, z: 0.0 }));
+        tail1.push(loft({ path: [[0, 0.02, 0.02], [0, -0.06, -0.08], [0, -0.28, -0.1], [0, -0.55, -0.04]], steps: 16, seg: 14, r: (t) => [0.075 * (1 + 0.25 * Math.sin(PI * t)) * ends(t, 0.1, 0) + 0.004, 0.055 * ends(t, 0.1, 0) + 0.004], shape: (_t, a) => 1 + 0.12 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.15 + 0.4 * t, p, o) }));
+        tail2.push(loft({ path: [[0, 0.02, -0.04], [0.02, -0.25, 0.0], [-0.01, -0.5, 0.05], [0, -0.72, 0.1]], steps: 18, seg: 14, r: (t) => { const k = 1 - Math.pow(t, 1.5); return [0.085 * k + 0.002, 0.055 * k + 0.002]; }, shape: (_t, a) => 1 + 0.14 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.55 + 0.45 * t, p, o) }));
+        break;
+      }
       default: // Hime cut
         cap(1.03); fringe(7, 0.6, 1.0, { blunt: true, w: 0.04, sweep: 0 }); sides(1.8, 0.12, { blunt: true, curl: 0, out: 0 });
         back(9, 1.6, 2 * PI - 1.6, 2.1, 0.6, { w: 0.075, blunt: true, r1: 1.08 });
@@ -598,7 +636,7 @@ export class Hero {
     }
     mesh(headGeos, lit, head);
     const t1 = pivot(head, 0, 0.34, -0.17, T1); mesh(tail1, lit, t1);
-    const t2 = pivot(t1, 0, -0.33, 0, T2); mesh(tail2, lit, t2);
+    const t2 = pivot(t1, 0, -tailL1, 0, T2); mesh(tail2, lit, t2);
 
     // scarf
     const s1 = pivot(spine, 0, 0.58, -0.16, S1), s2 = pivot(s1, 0, -0.42, 0, S2);
@@ -611,9 +649,18 @@ export class Hero {
     // =============================== arms ===============================
     for (const side of [-1, 1] as const) {
       const sh = pivot(spine, shoulder * side, 0.5, 0, side < 0 ? SHL : SHR);
-      const up = coat ? keys([[0, 0.07], [0.12, O.top === 3 ? 0.1 : 0.088], [0.3, 0.072], [0.7, 0.057], [1, 0.053]]) : keys([[0, 0.064], [0.15, 0.068], [0.5, 0.055], [1, 0.046]]);
+      const up = coat ? keys([[0, 0.07], [0.12, O.top === 3 ? 0.095 : 0.078], [0.3, 0.072], [0.7, 0.057], [1, 0.053]]) : keys([[0, 0.064], [0.15, 0.068], [0.5, 0.055], [1, 0.046]]);
       const arm: THREE.BufferGeometry[] = [loft({ path: [[0, 0.055, 0], [0, -0.14, 0], [0, -0.31, 0]], steps: 14, seg: 16, r: (t) => up(t) * limb * ends(t, 0.16, 0), color: vgrad(sleeve, sleeveL, 0.05, -0.31) })];
       if (coat) arm.push(lathe(-0.27, -0.31, () => 0.056 * limb, () => 0.056 * limb, O.top === 3 ? C.jacketL : C.gold, { seg: 16, steps: 2 }));
+      if (armor) {
+        // layered pauldron: three overlapping curved plates, trimmed
+        for (let k = 0; k < 3; k++) {
+          const y = 0.06 - k * 0.045, r = 0.1 - k * 0.006;
+          arm.push(loft({ path: [[0, y + 0.02, 0], [0, y - 0.05, 0]], steps: 4, seg: 18, r: () => [r * limb, r * limb * 1.05], shape: (t, a2) => (1 + 0.15 * t) * (Math.cos(a2) * side > -0.3 ? 1 : 0.55), color: k === 0 ? STEEL : STEEL_D }));
+          arm.push(loft({ path: [[0, y - 0.05, 0], [0, y - 0.058, 0]], steps: 1, seg: 18, r: () => [r * limb * 1.15 + 0.004, r * limb * 1.2 + 0.004], shape: (_t, a2) => (Math.cos(a2) * side > -0.3 ? 1 : 0.55), color: C.gold }));
+        }
+        arm.push(loft({ path: [[0, 0.13, 0], [0, 0.02, 0]], steps: 8, seg: 18, r: (t) => [0.118 * limb * Math.sqrt(Math.max(0.02, t)), 0.124 * limb * Math.sqrt(Math.max(0.02, t))], color: STEEL }));
+      }
       mesh(arm, lit, sh);
       const el = pivot(sh, 0, -0.31, 0, side < 0 ? ELL : ELR);
       const fore: THREE.BufferGeometry[] = [], foreIn: THREE.BufferGeometry[] = [];
@@ -635,6 +682,7 @@ export class Hero {
         fore.push(loft({ path: [[0, -0.322, z], [ix * 0.006, -0.35 * len - 0.322 * (1 - len) + 0.0, z * 1.05], [ix * 0.022 * len, -0.368 + 0.012 * (1 - len), z * 1.05]], steps: 6, seg: 8, r: (t) => (0.0095 - 0.002 * t) * ends(t, 0, 0.3) + 0.001, color: hand }));
       }
       fore.push(loft({ path: [[ix * 0.012, -0.285, 0.026], [ix * 0.02, -0.318, 0.042], [ix * 0.024, -0.342, 0.04]], steps: 6, seg: 8, r: (t) => 0.011 * ends(t, 0, 0.3) + 0.001, color: hand }));
+      if (armor) { const vr = keys([[0.0, 0.062], [-0.12, 0.058], [-0.2, 0.05]]); fore.push(lathe(0.0, -0.2, (y) => vr(y) * limb, (y) => vr(y) * limb * 1.05, grad(STEEL_D, STEEL, (_t, a2) => 0.4 + 0.6 * Math.max(0, Math.sin(a2))), { seg: 18, steps: 5 }), lathe(-0.195, -0.21, () => 0.054 * limb, () => 0.056 * limb, C.gold, { seg: 18, steps: 1 }), E(0.06 * limb, 0.05 * limb, 0.062 * limb, 0, 0.02, -0.01, STEEL, 14)); }
       mesh(fore, lit, el); mesh(foreIn, lit, el, false);
       if (O.top === 0 || O.top === 2) mesh([E(0.007, 0.05, 0.007, 0, -0.17, 0.056 * limb, C.cyan, 6)], glow, el);
     }
@@ -662,6 +710,12 @@ export class Hero {
         for (const y of [-0.2, -0.29]) shin.push(lathe(y + 0.01, y - 0.01, (yy) => br(yy) + 0.006, (yy) => br(yy) + 0.006, C.plate, { seg: 18, steps: 1, shape: (_t, a) => 1 + 0.08 * Math.max(0, Math.sin(a)) }), box(0.024, 0.026, 0.01, 0, y, br(y) * 1.08 + 0.01, C.gold));
       } else if (O.boots === 1) {
         shin.push(lathe(-0.27, -0.4, () => 0.07, () => 0.072, vgrad(C.bootL, C.boot, -0.27, -0.4), { seg: 18, steps: 4 }), lathe(-0.27, -0.29, () => 0.074, () => 0.076, C.gold, { seg: 18, steps: 1 }));
+      } else if (O.boots === 4) {
+        // plate greaves with a knee cop over a leather shoe
+        const gr = keys([[0.02, 0.076], [-0.1, 0.08], [-0.3, 0.068], [-0.4, 0.064]]);
+        shin.push(lathe(0.02, -0.4, gr, gr, grad(STEEL_D, STEEL, (_t, a2) => 0.35 + 0.65 * Math.max(0, Math.sin(a2))), { seg: 18, steps: 10, shape: (t2, a2) => 1 + 0.12 * Math.max(0, Math.sin(a2)) + 0.22 * Math.exp(-(((t2 - 0.3) / 0.2) ** 2)) * Math.max(0, -Math.sin(a2)) }));
+        shin.push(loft({ path: [[0, 0.07, 0.04], [0, -0.03, 0.055]], steps: 6, seg: 14, up: [0, 0, 1], r: (t) => { const k = Math.sin(PI * Math.min(1, t * 1.05)); return [0.07 * k + 0.004, 0.035 * k + 0.004]; }, color: STEEL }));
+        shin.push(lathe(-0.385, -0.4, () => 0.066, () => 0.07, C.gold, { seg: 18, steps: 1 }));
       } else if (O.boots === 2) {
         shin.push(lathe(-0.33, -0.4, () => 0.054, () => 0.056, C.white, { seg: 16, steps: 2 }));
       } else {
@@ -680,7 +734,7 @@ export class Hero {
       if (O.boots === 0) mesh([E(0.005, 0.09, 0.005, 0, -0.25, 0.082, C.cyan, 6)], glow, kn);
       const an = pivot(kn, 0, -SH, 0, side < 0 ? ANL : ANR);
       const chunky = O.boots === 3, sneaker = O.boots === 2, fs = chunky ? 1.22 : 1;
-      const bc = sneaker ? C.white : C.boot, solec = sneaker ? C.red : chunky ? C.sole : C.red;
+      const bc = sneaker ? C.white : O.boots === 4 ? 0x5a3a22 : C.boot, solec = sneaker ? C.red : chunky ? C.sole : C.red;
       const fw = keys([[0, 0.05], [0.3, 0.06], [0.75, 0.058], [1, 0.034]]), fh = keys([[0, 0.055], [0.4, 0.05], [1, 0.032]]);
       mesh([
         loft({ path: [[0, -0.02, -0.055], [0, -0.035, 0.04], [0, -0.045, 0.13 * fs], [0, -0.05, 0.19 * fs]], steps: 14, seg: 14, up: [0, 1, 0], r: (t) => { const k = ends(t, 0.15, 0.2); return [fw(t) * fs * k + 0.002, fh(t) * fs * k + 0.002]; }, color: bc }),
