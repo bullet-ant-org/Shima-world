@@ -159,7 +159,7 @@ export function islandAt(x: number, z: number): Island | null {
 }
 
 /** levelled grounds (the racecourse): stadium-shaped areas pulled to a constant height, blended into the hills */
-export const FLATS: { x: number; z: number; c: number; s: number; L: number; R: number; h: number; blend: number }[] = [];
+export const FLATS: { x: number; z: number; c: number; s: number; L: number; R: number; h: number; blend: number; rot?: boolean }[] = [];
 export function heightAt(x: number, z: number): number {
   const raw = rawHeight(x, z);
   if (!FLATS.length) return raw;
@@ -167,7 +167,8 @@ export function heightAt(x: number, z: number): number {
   for (const f of FLATS) {
     const dx = x - f.x, dz = z - f.z;
     if (Math.abs(dx) > f.L + f.R + f.blend + 10 || Math.abs(dz) > f.L + f.R + f.blend + 10) continue;
-    const lx = dx * f.c - dz * f.s, lz = dx * f.s + dz * f.c, d = Math.hypot(Math.max(0, Math.abs(lx) - f.L / 2), lz) - f.R;
+    // rot: the long axis runs along local x of a frame rotated by the port's heading (x along the shore)
+    const lx = f.rot ? dx * f.c - dz * f.s : dx * f.c - dz * f.s, lz = dx * f.s + dz * f.c, d = Math.hypot(Math.max(0, Math.abs(lx) - f.L / 2), lz) - f.R;
     if (d < f.blend) { const w = 1 - sstep(0, f.blend, d); h += (f.h - h) * w; }
   }
   return h;

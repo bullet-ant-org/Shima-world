@@ -9,6 +9,7 @@ import { Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Townsfolk } from './entities/npcs';
 import { Racecourse } from './entities/racing';
 import { Creatures } from './entities/creatures';
+import { Seaport } from './world/seaport';
 import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
 import { Hud, type Stats } from './ui/hud';
 import { Herd } from './entities/horse';
@@ -51,6 +52,7 @@ export class Game {
   private npc!: Townsfolk;
   private races!: Racecourse;
   private creatures!: Creatures;
+  private port!: Seaport;
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
   private camSnap = false;
@@ -135,6 +137,7 @@ export class Game {
     this.npc.enableStars(this.assets, q.npc >= 150 ? 8 : q.npc >= 70 ? 4 : 2);
     this.races = new Racecourse(this.assets, this.npc); this.scene.add(this.races.group);
     this.creatures = new Creatures(this.assets.ramp, this.assets.rig); this.scene.add(this.creatures.group);
+    this.port = new Seaport(this.assets); this.scene.add(this.port.group);
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
@@ -270,6 +273,7 @@ export class Game {
     this.npc.update(dt, this.player.x, this.player.z, this.gameTime);
     this.races.update(dt, this.player.x, this.player.z, now / 1000);
     this.creatures.update(dt, this.player.x, this.player.y, this.player.z, now / 1000);
+    this.port.update(dt, this.player.x, this.player.z, now / 1000, this.gameTime < 6 || this.gameTime > 19 ? 1 : 0);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
     this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);
     lap('sim');

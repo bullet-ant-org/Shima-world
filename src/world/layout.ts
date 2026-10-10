@@ -278,6 +278,7 @@ const COVER: Record<string, number> = { house0: 8, house1: 9, house2: 8, cabin0:
 let coverGrid: Map<string, { x: number; z: number; r: number }[]> | null = null;
 /** true where a building / field / stall sits */
 export function covered(x: number, z: number): boolean {
+  if (inPort(x, z, 2)) return true;
   if (courseDist(x, z) < 9.5) return true;   // racetrack dirt and rails
   if (!coverGrid) {
     coverGrid = new Map();
@@ -477,6 +478,41 @@ export const PASTURES: { x: number; z: number; r: number }[] = [];
 /** the valley racecourse: an oval (straights along local x, turns of radius R at x = +-L/2), track width W */
 export interface Course { x: number; z: number; ry: number; L: number; R: number; W: number }
 export let RACECOURSE: Course | null = null;
+
+/** the city seaport: a quay platform on the coast (local x along the shore, +z out to sea) */
+export interface Port { x: number; z: number; ry: number; hw: number; hd: number; deck: number }
+export let PORT: Port | null = null;
+export function portLocal(p: Port, lx: number, lz: number): [number, number] { const c = Math.cos(p.ry), s = Math.sin(p.ry); return [p.x + lx * c + lz * s, p.z - lx * s + lz * c]; }
+/** on the port's quay (plus a margin) */
+export function inPort(x: number, z: number, margin = 0): boolean {
+  const p = PORT; if (!p) return false;
+  const dx = x - p.x, dz = z - p.z, c = Math.cos(p.ry), s = Math.sin(p.ry);
+  return Math.abs(dx * c - dz * s) < p.hw + margin && Math.abs(dx * s + dz * c) < p.hd + margin;
+}
+function seaport(): void {
+  let best: Port | null = null, score = -1e9;
+  for (let k = 0; k < 72; k++) {
+    const a = (k / 72) * TAU;
+    let r = 600; while (r < 1500 && heightAt(CITY_C.x + Math.cos(a) * r, CITY_C.z + Math.sin(a) * r) > -1.5) r += 6;
+    if (r >= 1500) continue;
+    const nx = Math.cos(a), nz = Math.sin(a), ry = Math.atan2(nx, nz);
+    const p: Port = { x: CITY_C.x + nx * (r + 10), z: CITY_C.z + nz * (r + 10), ry, hw: 150, hd: 45, deck: 2.6 };
+    if (Math.hypot(p.x - AIRPORT.cx, p.z - AIRPORT.cz) < 900) continue;
+    let ok = true, sea = 0;
+    for (let i = -3; i <= 3 && ok; i++) for (let j = -2; j <= 2 && ok; j++) {
+      const [x, z] = portLocal(p, (i / 3) * (p.hw + 20), (j / 2) * (p.hd + 20) - 15);
+      if (blockTop(x, z) > -Infinity || NET.edgeDist(x, z, 30) < 12 || NET.nearest(x, z, 30, ['sky'])) ok = false;
+      if (heightAt(x, z) < -1) sea++;
+    }
+    const [fx, fz] = portLocal(p, 0, 260);
+    if (!ok || heightAt(fx, fz) > -4) continue;                   // open water in front for the ships
+    const sc = sea * 2 - Math.abs(sea - 18);
+    if (sc > score) { score = sc; best = p; }
+  }
+  if (!best) return;
+  PORT = best;
+  FLATS.push({ x: best.x, z: best.z, c: Math.cos(best.ry), s: Math.sin(best.ry), L: best.hw * 2 - best.hd * 2, R: best.hd, h: best.deck, blend: 5, rot: true });
+}
 /** point + heading on the course centre line at distance s (wraps), with a lateral offset (+ = outside) */
 export function courseAt(c: Course, s: number, off = 0): { x: number; z: number; yaw: number } {
   const P = 2 * c.L + 2 * Math.PI * c.R; s = ((s % P) + P) % P;
@@ -718,6 +754,7 @@ export function buildLayout(): void {
   airport();
   buildCityLots();
   cityFurniture();
+  seaport();
   godIsland(); sakuraValley(); yukigami(); islets(); countryside();
   // volcano: torii processional climbing the south face toward the crater, and a forge shrine at its foot
   for (let i = 0; i < 8; i++) {

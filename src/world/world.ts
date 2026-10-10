@@ -7,7 +7,7 @@ import {
   benchGeo, barnGeo, isSignature, hasCustomModel, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
-import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, inCourseArea, setCollisionShapes, type Building } from './layout';
+import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, inCourseArea, inPort, setCollisionShapes, type Building } from './layout';
 import { type Shape, rasterize } from './collide';
 import type { BuildingSpec } from '../rendering/geo';
 import {
@@ -601,7 +601,7 @@ export class World {
     const ox = cx * CHUNK, oz = cz * CHUNK;
     for (let k = 0; k < 40; k++) {
       const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, r = rnd();
-      if (blocked(x, z) || NET.edgeDist(x, z, 10) < 6 || heightAt(x, z) < 1) continue;
+      if (blocked(x, z) || NET.edgeDist(x, z, 10) < 6 || heightAt(x, z) < 1 || inPort(x, z, 10)) continue;
       if (r < 0.55) (B.parkTree ??= new Batch()).add(x, heightAt(x, z), z, rnd() * 6, 1 + rnd() * 0.5, 1 + rnd() * 0.6, 1 + rnd() * 0.5);
       else if (r < 0.7) add('plant', x, z, rnd() * 6);
       else if (r < 0.85) (B.bench ??= new Batch()).add(x, heightAt(x, z), z, rnd() * 6, 1, 1, 1);
@@ -670,7 +670,7 @@ export class World {
     const cast = ring === 0;
     const trees = new Batch(), glows = new Batch();
     const at = (x: number, z: number, id: IslandId) => islandAt(x, z)?.id === id;
-    const clear = (x: number, z: number, r = 6) => NET.edgeDist(x, z, r + 2) > r && !inCourseArea(x, z, r); // keep paths, roads and the racecourse free of vegetation
+    const clear = (x: number, z: number, r = 6) => NET.edgeDist(x, z, r + 2) > r && !inCourseArea(x, z, r) && !inPort(x, z, r); // keep paths, roads and the racecourse free of vegetation
 
     // ---- Sakura Valley: sakura groves on the lowlands, dark cedar forest on the mountains ----
     if (zone === 'valley') {
