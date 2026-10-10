@@ -157,7 +157,7 @@ export function presets(): { name: string; spec: CharacterSpec }[] {
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const rr = (a: number, b: number) => a + Math.random() * (b - a);
 
-export function randomSpec(gender?: Gender): CharacterSpec {
+export function randomSpec(gender?: Gender, npc = false): CharacterSpec {
   const g: Gender = gender ?? (Math.random() < 0.5 ? 'female' : 'male');
   const s = defaultSpec(g);
   s.height = rr(0.92, 1.08); s.build = rr(0, 1); s.shoulders = rr(0, 1); s.bust = g === 'female' ? rr(0.2, 0.9) : 0; s.head = rr(0.92, 1.12); s.skin = pick(SKIN_TONES.slice(0, 10));
@@ -174,5 +174,13 @@ export function randomSpec(gender?: Gender): CharacterSpec {
     trim: pick(['#e6b23a', '#f2ecd8', '#c8c8d8', '#ff8a2a']), pants: pick(OUTFIT_COLORS), bootColor: pick(['#181a26', '#2a1a14', '#f2ecd8', '#34439a']), scarfColor: pick(OUTFIT_COLORS), headbandColor: pick(OUTFIT_COLORS),
     glow: pick(['#45ecff', '#ff6ad0', '#8aff6a', '#ffd84a', '#b08aff']), scarf: Math.random() < 0.7, weapon: Math.floor(Math.random() * 4), headband: Math.random() < 0.6, wings: Math.random() < 0.4,
   });
+  // base model: an outfit with its palette (lightly varied) and a hairstyle that suits the gender
+  const look = g === 'male' ? pick([1, 1, 2, 3, 3, 4, 5]) : pick([0, 1, 2, 3, 4, 6, 6]);
+  s.outfit.look = look;
+  if (OUTFIT_PALETTES[look]) Object.assign(s.outfit, OUTFIT_PALETTES[look], Math.random() < 0.6 ? { primary: pick(OUTFIT_COLORS) } : {});
+  s.outfit.gloves = false;
+  s.hair.base = g === 'male' ? pick([1, 1, 2, 4, 6, 7, 3]) : pick([0, 0, 3, 5, 5, 1]);
+  s.face.beard = g === 'male' && Math.random() < 0.35 ? 1 + Math.floor(Math.random() * 4) : 0;
+  if (npc) { s.outfit.weapon = Math.random() < 0.06 ? 1 : 0; s.base = 0; s.height = g === 'male' ? rr(0.98, 1.1) : rr(0.92, 1.03); }
   return s;
 }

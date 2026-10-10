@@ -109,7 +109,7 @@ export class Game {
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
 
-    if ((spec?.base ?? 0) === 0) await loadBaseModel().catch((e) => console.error('base model failed to load', e));
+    await loadBaseModel().catch((e) => console.error('base model failed to load', e));  // also used for the close-up townsfolk
     // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
     const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
     this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn, spec, q.outlines !== 'off', q.heroDetail);
@@ -127,7 +127,8 @@ export class Game {
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
-    this.npc = new Townsfolk(Math.max(40, Math.round(q.npc * 1.2)), this.assets.ramp);
+    this.npc = new Townsfolk(Math.max(50, Math.round(q.npc * 1.6)), this.assets.ramp);
+    this.npc.enableStars(this.assets, q.npc >= 150 ? 8 : q.npc >= 70 ? 4 : 2);
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);

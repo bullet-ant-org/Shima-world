@@ -18,6 +18,9 @@ import { loft, keys } from './sculpt';
 import { heightAt, mulberry32, RICE } from '../world/terrain';
 import { BUILDINGS, NET, PROPS, inCity } from '../world/layout';
 import type { Path } from '../world/paths';
+import { makeCharacter, baseModelReady, type CharacterBody } from './humanoid';
+import { randomSpec } from './character';
+import type { HeroAssets } from './hero';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // bodies
@@ -391,7 +394,37 @@ export class Townsfolk {
   }
   private countWalkers(): number { let n = 0; for (const a of this.ag) if (a.on && a.slot === -1) n++; return n; }
 
+  // ---- close-up people: the nearest few are full builder characters (rigged base model, random looks) ----
+  private stars: { body: CharacterBody; male: boolean; agent: number }[] = [];
+  private starOf = new Map<number, number>();
+  private starT = 0;
+  /** build `n` full characters with random builder looks (half men, half women) to stand in for the nearest people */
+  enableStars(assets: HeroAssets, n: number): void {
+    if (!baseModelReady()) return;
+    for (let i = 0; i < n; i++) {
+      const male = i % 2 === 0, body = makeCharacter(assets, randomSpec(male ? 'male' : 'female', true), false, 0.5);
+      body.root.visible = false;
+      this.group.add(body.root);
+      this.stars.push({ body, male, agent: -1 });
+    }
+  }
+  private assignStars(px: number, pz: number): void {
+    if (!this.stars.length) return;
+    const near: [number, number][] = [];
+    this.ag.forEach((a, i) => { if (a.on && a.v !== 2 && a.act !== Act.Sit && a.act !== Act.Plant && a.act !== Act.Hoe) { const d = Math.hypot(a.x - px, a.z - pz); if (d < 32) near.push([i, d]); } });
+    near.sort((a, b) => a[1] - b[1]);
+    const want = new Set(near.slice(0, this.stars.length).map((n) => n[0]));
+    for (const st of this.stars) if (st.agent >= 0 && (!want.has(st.agent) || !this.ag[st.agent].on)) { this.starOf.delete(st.agent); st.agent = -1; st.body.root.visible = false; }
+    for (const [i] of near) {
+      if (!want.has(i) || this.starOf.has(i)) continue;
+      const male = this.ag[i].v === 0, k = this.stars.findIndex((st) => st.agent < 0 && st.male === male);
+      if (k < 0) continue;
+      this.stars[k].agent = i; this.starOf.set(i, k); this.stars[k].body.root.visible = true;
+    }
+  }
+
   update(dt: number, px: number, pz: number, hour: number): void {
+    this.starT -= dt; if (this.starT <= 0) { this.starT = 0.4; this.assignStars(px, pz); }
     this.frame++; this.hour = hour; this.bumpCool -= dt;
     this.scanT -= dt;
     const jumped = Math.hypot(px - this.lastX, pz - this.lastZ) > 80;    // teleported / travelled: fill the new place at once
@@ -413,6 +446,13 @@ export class Townsfolk {
       this.pv.set(a.x, (a.slot === PINNED ? a.y : heightAt(a.x, a.z)) + a.lift + bob * a.sc, a.z);
       this.q.setFromEuler(this.e.set(0, a.yaw, 0));
       this.sv.setScalar(a.sc);
+      const si = this.starOf.get(this.ag.indexOf(a));
+      if (si !== undefined) {
+        const b = this.stars[si].body, walking = a.slot === -1 || a.act === Act.Walk;
+        b.pose({ dt: step, mode: 'ground', hs: walking ? a.speed : a.act === Act.Dance ? 0.6 * Math.abs(Math.sin(a.ph * 2.6)) : 0, speed: walking ? a.speed : 0, vy: 0, grounded: true, boost: false, bank: 0 });
+        b.root.position.set(a.x, this.pv.y - bob * a.sc, a.z); b.root.rotation.set(0, a.yaw, 0); b.root.updateMatrixWorld(true);
+        this.sv.setScalar(0);
+      }
       this.m.compose(this.pv, this.q, this.sv);
       this.meshes[a.v].setMatrixAt(a.k, this.m);
       dirty[a.v] = true;
