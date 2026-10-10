@@ -346,9 +346,8 @@ export class Hero {
     if (O.top === 0 || O.top === 2) { const p = tsurf(0.36, PI / 2, 0.012); mesh([E(0.026, 0.026, 0.008, p[0], p[1], p[2], C.cyan, 10)], glow, spine); }
 
     // =============================== head ===============================
-    // realistic anime proportions (~7.5 heads tall): a modest head on a visible neck
-    const head = pivot(spine, 0, 0.6, 0, HD);
-    head.scale.setScalar(0.8 * spec.head);
+    const head = pivot(spine, 0, 0.575, 0, HD);
+    head.scale.setScalar(1.42 * spec.head);
     const wS = 1 + 0.1 * F_.width, jw = 1 + 0.16 * F_.jaw;
     const crownC = 0.228, crownR = 0.152;
     // anime lower face: narrow, tapering to a small rounded chin point; the Jaw slider moves the jaw angle, not the chin tip
@@ -417,7 +416,7 @@ export class Hero {
     }
     const headGeos: THREE.BufferGeometry[] = [headG];
     // neck
-    headGeos.push(loft({ path: [[0, -0.2, -0.012], [0, -0.05, -0.006], [0, 0.1, 0.0]], steps: 6, seg: 16, r: (t) => (0.062 + 0.014 * m) * (1.12 - 0.12 * t), color: vgrad(C.skinS, C.skin, -0.2, 0.1) }));
+    headGeos.push(loft({ path: [[0, -0.06, -0.008], [0, 0.1, 0.0]], steps: 4, seg: 14, r: () => 0.047 + 0.008 * m, color: vgrad(C.skinS, C.skin, -0.06, 0.1) }));
     // ears
     const ens = F_.earSize, earX = 0.133 * wS - 0.006;
     if (F_.ears === 0) for (const sx of [-1, 1]) headGeos.push(loft({ path: [[sx * earX, 0.15, -0.01], [sx * (earX + 0.012), 0.205, -0.02]], steps: 8, seg: 10, r: (t) => { const k = ends(t, 0.4, 0.4); return [0.011 * ens * k, 0.024 * ens * k]; }, color: C.skin }));
@@ -601,10 +600,10 @@ export class Hero {
       case 21: { // Long ponytail: high tie, flowing to the waist, long face-framing locks
         cap(); fringe(6, 0.55, 1.0, { w: 0.046 }); sides(1.75, 0.5, { w: 0.05, wave: 0.012, curl: -0.01 });
         back(7, 1.9, 4.38, 2.0, 0, { r1: 1.0, w: 0.06 });
-        tailL1 = 0.55;
+        tailL1 = 0.36;
         tail1.push(lathe(0.02, -0.02, () => 0.045, () => 0.045, C.band, { seg: 12, steps: 2, z: 0.0 }));
-        tail1.push(loft({ path: [[0, 0.02, 0.02], [0, -0.06, -0.08], [0, -0.28, -0.1], [0, -0.55, -0.04]], steps: 16, seg: 14, r: (t) => [0.075 * (1 + 0.25 * Math.sin(PI * t)) * ends(t, 0.1, 0) + 0.004, 0.055 * ends(t, 0.1, 0) + 0.004], shape: (_t, a) => 1 + 0.12 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.15 + 0.4 * t, p, o) }));
-        tail2.push(loft({ path: [[0, 0.02, -0.04], [0.02, -0.25, 0.0], [-0.01, -0.5, 0.05], [0, -0.72, 0.1]], steps: 18, seg: 14, r: (t) => { const k = 1 - Math.pow(t, 1.5); return [0.085 * k + 0.002, 0.055 * k + 0.002]; }, shape: (_t, a) => 1 + 0.14 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.55 + 0.45 * t, p, o) }));
+        tail1.push(loft({ path: [[0, 0.02, 0.02], [0, -0.05, -0.06], [0, -0.19, -0.07], [0, -0.36, -0.03]], steps: 16, seg: 14, r: (t) => [0.075 * (1 + 0.25 * Math.sin(PI * t)) * ends(t, 0.1, 0) + 0.004, 0.055 * ends(t, 0.1, 0) + 0.004], shape: (_t, a) => 1 + 0.12 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.15 + 0.4 * t, p, o) }));
+        tail2.push(loft({ path: [[0, 0.02, -0.03], [0.015, -0.17, 0.0], [-0.01, -0.34, 0.04], [0, -0.5, 0.08]], steps: 18, seg: 14, r: (t) => { const k = 1 - Math.pow(t, 1.5); return [0.085 * k + 0.002, 0.055 * k + 0.002]; }, shape: (_t, a) => 1 + 0.14 * Math.abs(Math.sin(a * 3)), color: (t, _a, p, o) => hc(0.55 + 0.45 * t, p, o) }));
         break;
       }
       default: // Hime cut
@@ -649,7 +648,7 @@ export class Hero {
     // =============================== arms ===============================
     for (const side of [-1, 1] as const) {
       const sh = pivot(spine, shoulder * side, 0.5, 0, side < 0 ? SHL : SHR);
-      const up = coat ? keys([[0, 0.07], [0.12, O.top === 3 ? 0.095 : 0.078], [0.3, 0.072], [0.7, 0.057], [1, 0.053]]) : keys([[0, 0.064], [0.15, 0.068], [0.5, 0.055], [1, 0.046]]);
+      const up = coat ? keys([[0, 0.07], [0.12, O.top === 3 ? 0.1 : 0.088], [0.3, 0.072], [0.7, 0.057], [1, 0.053]]) : keys([[0, 0.064], [0.15, 0.068], [0.5, 0.055], [1, 0.046]]);
       const arm: THREE.BufferGeometry[] = [loft({ path: [[0, 0.055, 0], [0, -0.14, 0], [0, -0.31, 0]], steps: 14, seg: 16, r: (t) => up(t) * limb * ends(t, 0.16, 0), color: vgrad(sleeve, sleeveL, 0.05, -0.31) })];
       if (coat) arm.push(lathe(-0.27, -0.31, () => 0.056 * limb, () => 0.056 * limb, O.top === 3 ? C.jacketL : C.gold, { seg: 16, steps: 2 }));
       if (armor) {

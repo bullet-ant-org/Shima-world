@@ -93,7 +93,7 @@ export class Preview {
     this.yaw += (this.tYaw - this.yaw) * Math.min(1, dt * 10);
     this.zoom += (this.tZoom - this.zoom) * Math.min(1, dt * 6);
     if (this.demo === 'idle' && !this.userTurned && Math.abs(this.tYaw - this.yaw) < 0.01) this.tYaw += dt * 0.15;
-    const z = this.zoom, d = 4.6 - z * 3.65, ty = 0.9 + z * 0.68;
+    const z = this.zoom, d = 6.2 - z * 4.8, ty = 0.98 + z * 0.72;
     this.cam.position.set(Math.sin(this.yaw) * d, ty + 0.15, Math.cos(this.yaw) * d);
     this.cam.lookAt(0, ty, 0);
     if (this.hero) {
