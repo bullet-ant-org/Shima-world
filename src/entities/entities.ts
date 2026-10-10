@@ -7,14 +7,13 @@ import { defaultSpec, normalize, type CharacterSpec } from './character';
 import { SEAT_Y, type Herd, type Horse } from './horse';
 import type { Input } from '../core/input';
 import { heightAt, mulberry32 } from '../world/terrain';
-import { NET, blockTop, blocked, cityPaths, inCity } from '../world/layout';
+import { NET, blockTop, blocked, inCity } from '../world/layout';
 import type { Path } from '../world/paths';
 import { CAR_MODELS, carGeo, type CarModel } from '../rendering/cars';
 import { hullGeo, outlineMat } from '../rendering/outline';
 import type { Network } from '../network/network';
 
 const O = new THREE.Object3D();
-const PALETTE = [0xc8283c, 0x2b3d8f, 0xe9dfc8, 0x25c8e6, 0x8f3dd1, 0xf0a030, 0x2a2f3d].map((h) => new THREE.Color(h));
 
 /** Player controller: walking, jumping, flying (hover / fly / boost) and the brace-slide when landing at speed. */
 export class Player {
@@ -121,7 +120,7 @@ export class Player {
       if (wall(this.x, nz)) { nz = this.z; this.vz = 0; }
       this.x = nx; this.z = nz;
       if (this.hspeed > 0.5) { this.yaw = Math.atan2(this.vx, this.vz); }
-      const ground = Math.max(heightAt(this.x, this.z), 0);
+      const ground = Math.max(heightAt(this.x, this.z), 0) + NET.surfaceLift(this.x, this.z);
       if (I.jump && this.grounded) { this.vy = 7.5; this.grounded = false; }
       this.vy -= 22 * dt; this.y += this.vy * dt;
       if (this.y <= ground) { this.y = ground; this.vy = 0; this.grounded = true; }
@@ -142,12 +141,12 @@ export class Player {
         this.x = nx; this.z = nz;
         this.faceVelocity(dt, 8);
       }
-      this.y = Math.max(heightAt(this.x, this.z), 0);
+      this.y = Math.max(heightAt(this.x, this.z), 0) + NET.surfaceLift(this.x, this.z);
       return;
     }
 
     if (this.mode === 'land') {
-      this.landT -= dt; this.vx = this.vz = 0; this.y = Math.max(heightAt(this.x, this.z), 0);
+      this.landT -= dt; this.vx = this.vz = 0; this.y = Math.max(heightAt(this.x, this.z), 0) + NET.surfaceLift(this.x, this.z);
       if (this.landT <= 0) { this.mode = 'ground'; this.grounded = true; }
       return;
     }
@@ -208,75 +207,6 @@ export class Player {
       this.group.position.set(this.x, this.y, this.z);
       this.group.rotation.set(0, this.yaw, 0);
     }
-  }
-}
-
-/** Near = full AI each frame. Mid = updated every 4th frame. Far = recycled into a fresh near entity (statistical -> entity). */
-export class NpcSystem {
-  readonly mesh: THREE.InstancedMesh;
-  readonly n: number;
-  private px: Float32Array; private pz: Float32Array; private dx: Float32Array; private dz: Float32Array;
-  private sp: Float32Array; private turn: Float32Array; private acc: Float32Array;
-  private rnd = mulberry32(4242);
-  private frame = 0;
-  counts = { full: 0, reduced: 0, recycled: 0 };
-
-  constructor(n: number, assets: Assets, ink = false) {
-    this.n = n;
-    this.mesh = new THREE.InstancedMesh(assets.person, assets.folk, n);
-    if (ink) { const ol = new THREE.InstancedMesh(hullGeo(assets.person), outlineMat(0.012), n); ol.instanceMatrix = this.mesh.instanceMatrix; ol.frustumCulled = false; this.mesh.add(ol); }
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
-    this.mesh.frustumCulled = false;
-    this.mesh.castShadow = false;
-    this.px = new Float32Array(n); this.pz = new Float32Array(n); this.dx = new Float32Array(n); this.dz = new Float32Array(n);
-    this.sp = new Float32Array(n); this.turn = new Float32Array(n); this.acc = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      this.mesh.setColorAt(i, PALETTE[i % PALETTE.length]);
-      this.px[i] = 1e6;
-    }
-  }
-
-  private spawn(i: number, cx: number, cz: number): void {
-    for (let t = 0; t < 6; t++) {
-      const a = this.rnd() * Math.PI * 2, d = 25 + this.rnd() * 140;
-      const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-      if (heightAt(x, z) < 1.5 || blocked(x, z)) continue;
-      this.px[i] = x; this.pz[i] = z;
-      const h = this.rnd() * 6.28; this.dx[i] = Math.cos(h); this.dz[i] = Math.sin(h);
-      this.sp[i] = 1.1 + this.rnd() * 1.2; this.turn[i] = 1 + this.rnd() * 5;
-      return;
-    }
-    this.px[i] = 1e6; // no valid spot this frame; try again next recycle
-  }
-
-  update(dt: number, cx: number, cz: number): void {
-    this.frame++;
-    let full = 0, red = 0, rec = 0;
-    for (let i = 0; i < this.n; i++) {
-      const ddx = this.px[i] - cx, ddz = this.pz[i] - cz, d2 = ddx * ddx + ddz * ddz;
-      if (d2 > 200 * 200) { this.spawn(i, cx, cz); rec++; }
-      let step = 0;
-      if (d2 < 45 * 45) { step = dt; full++; }
-      else { this.acc[i] += dt; red++; if ((this.frame + i) % 4 === 0) { step = this.acc[i]; this.acc[i] = 0; } }
-      if (step > 0 && this.px[i] < 1e5) {
-        this.turn[i] -= step;
-        if (this.turn[i] <= 0) { const h = this.rnd() * 6.28; this.dx[i] = Math.cos(h); this.dz[i] = Math.sin(h); this.turn[i] = 2 + this.rnd() * 6; }
-        const nx = this.px[i] + this.dx[i] * this.sp[i] * step, nz = this.pz[i] + this.dz[i] * this.sp[i] * step;
-        if (heightAt(nx, nz) < 1.2 || blocked(nx, nz)) { this.dx[i] = -this.dx[i]; this.dz[i] = -this.dz[i]; }
-        else { this.px[i] = nx; this.pz[i] = nz; }
-      }
-      if (this.px[i] > 1e5) { O.position.set(0, -999, 0); O.scale.setScalar(0.0001); }
-      else {
-        O.position.set(this.px[i], heightAt(this.px[i], this.pz[i]), this.pz[i]);
-        O.rotation.set(0, Math.atan2(this.dx[i], this.dz[i]), 0);
-        O.scale.setScalar(1);
-      }
-      O.updateMatrix();
-      this.mesh.setMatrixAt(i, O.matrix);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
-    this.counts.full = full; this.counts.reduced = red; this.counts.recycled = rec;
   }
 }
 

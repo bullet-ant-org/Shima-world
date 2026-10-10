@@ -91,6 +91,16 @@ export class PathNet {
     return best;
   }
 
+  /** height of the paved surface above the terrain here: city carriageway 0.12, raised sidewalk 0.32, else 0 */
+  surfaceLift(x: number, z: number): number {
+    const s = this.nearest(x, z, 16, ['avenue', 'street']);
+    if (!s) return 0;
+    const p = s.path, d = Math.abs((x - p.x[s.i]) * -p.tz[s.i] + (z - p.z[s.i]) * p.tx[s.i]), hw = p.width / 2;
+    if (d < hw) return 0.12;
+    if (d < hw + 4.2) return p.junc?.[s.i] ? 0.12 : 0.32;
+    return 0;
+  }
+
   /** nearest sample within `maxR` metres, or null */
   nearest(x: number, z: number, maxR: number, kinds?: string[]): Seg | null {
     const cx = Math.floor(x / this.CELL), cz = Math.floor(z / this.CELL), r = Math.ceil(maxR / this.CELL);

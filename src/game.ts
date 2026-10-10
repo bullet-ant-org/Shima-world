@@ -5,7 +5,8 @@ import { Assets } from './rendering/assets';
 import { World } from './world/world';
 import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
-import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
+import { Player, RemotePlayers, TrafficSystem } from './entities/entities';
+import { Townsfolk } from './entities/npcs';
 import { Herd } from './entities/horse';
 import { loadBaseModel } from './entities/humanoid';
 import { Grass } from './rendering/grass';
@@ -43,7 +44,7 @@ export class Game {
   private herd!: Herd;
   private grass: Grass | null = null;
   private grassGood = 0;
-  private npc!: NpcSystem;
+  private npc!: Townsfolk;
   private traffic!: TrafficSystem;
   private skyTraffic!: TrafficSystem;
   private remotes!: RemotePlayers;
@@ -116,11 +117,11 @@ export class Game {
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
-    this.npc = new NpcSystem(q.npc, this.assets, q.outlines === 'all');
+    this.npc = new Townsfolk(Math.max(40, Math.round(q.npc * 1.2)), this.assets.ramp);
     this.traffic = new TrafficSystem(q.traffic, this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
-    this.scene.add(this.npc.mesh, this.traffic.group, this.skyTraffic.group, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
+    this.scene.add(this.npc.group, this.traffic.group, this.skyTraffic.group, this.remotes.mesh, this.trail.points, this.spirits.points, this.dust.points, this.speedLines.lines, this.hoverRing.mesh);
 
     // lighting: one directional (sun/moon) + hemisphere probe-style fill. No other dynamic lights.
     this.scene.add(this.sun, this.sun.target, this.hemi);
@@ -206,7 +207,7 @@ export class Game {
     this.gameTime = (this.gameTime + dt * (24 / 600)) % 24; // 10-minute day
     this.applyTime();
     this.updateWeather(dt);
-    this.npc.update(dt, this.player.x, this.player.z);
+    this.npc.update(dt, this.player.x, this.player.z, this.gameTime);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);
     this.skyTraffic.update(dt, this.player.x, this.player.z, now / 1000);
     lap('sim');
