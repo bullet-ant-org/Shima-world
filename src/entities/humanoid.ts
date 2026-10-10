@@ -16,11 +16,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Hero, type HeroAssets, type PoseIn, H, SP, HD, SHL, ELL, SHR, ELR, THL, KNL, ANL, THR, KNR, ANR, NJ, JOINT_PARENT } from './hero';
 import type { CharacterSpec } from './character';
+import { Dresser } from './wardrobe';
 
 const URL = '/models/base_female.glb';
 /** model units -> metres (the file is authored ~0.135 units tall) */
 const UNIT = 12.3;
 const SOLE = 0.011;          // the sandal soles sit this far below the model origin
+const FLAT_SOLE = 0.0004;    // without the heeled sandals the bare foot is the lowest point
 const HIP_Y = 0.0632;        // pelvis height in model units
 const RIG_HIP = 0.9;         // Hero's HIP constant
 
@@ -66,6 +68,7 @@ export class Humanoid {
   private scale: number;
   private owned: { dispose(): void }[] = [];
   weapon = 0;
+  private flat = false;
 
   constructor(assets: HeroAssets, spec: CharacterSpec, ink = true) {
     if (!template) throw new Error('base model not loaded (await loadBaseModel() first)');
@@ -80,6 +83,17 @@ export class Humanoid {
     this.model.scale.setScalar(this.scale);
     this.model.position.y = SOLE * this.scale;
     this.root.add(this.model);
+    // the model's own clothes / hair are one option among many: hide what the spec replaces
+    const look = spec.outfit.look ?? 0, bodies: THREE.SkinnedMesh[] = [];
+    this.model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh; if (!m.isMesh) return;
+      const n = (m.material as THREE.Material).name || '';
+      if (/young_caucasian_female/.test(n)) bodies.push(m);
+      if (look !== 0 && /vnecktop|pleated|material\.001|Heelsandal|sport_briefs/.test(n)) m.visible = false;
+      if ((spec.hair.base ?? 0) !== 0 && /^mat[123]$/.test(n)) m.visible = false;
+    });
+    this.flat = look !== 0;
+    if (this.flat) this.model.position.y = FLAT_SOLE * this.scale;      // bare / flat-shod feet stand lower than heels
     this.dressMaterials(assets, spec);
 
     this.fixEyeBind();
@@ -110,6 +124,9 @@ export class Humanoid {
       this.drive.set(i, { joint: m.joint, w: m.w ?? 1, corr });
     }
     this.parentIdx = order.map((b, i) => (i === 0 ? -1 : order.indexOf(b.parent!)));
+    const dresser = new Dresser(this.model, bodies, assets.ramp, this.owned);
+    dresser.dress(spec);
+    dresser.glasses(spec.face.glasses ?? 0);
     this.reshape(spec);
     if (this.weapon) this.attachWeapon(this.weapon);
   }
@@ -180,20 +197,38 @@ export class Humanoid {
       d.multiplyScalar(this.scale / ps.x);
       b.position.add(d);
     };
-    scaleBone('head', 0.92 + 0.3 * (spec.head - 1));
-    scaleBone('clavicle_L', 1 + 0.22 * ((spec.shoulders ?? 0.5) - 0.5), ['upperarm01_L']);
-    scaleBone('clavicle_R', 1 + 0.22 * ((spec.shoulders ?? 0.5) - 0.5), ['upperarm01_R']);
-    const bust = spec.gender === 'male' ? 0.55 : 0.75 + 0.6 * ((spec.bust ?? 0.5) - 0.3);
+    const male = spec.gender === 'male', build = spec.build ?? 0.5;
+    scaleBone('head', (male ? 0.9 : 0.92) + 0.3 * (spec.head - 1));
+    /** radial (thickness) scale of a limb bone, keeping its children's own size */
+    const thick = (n: string, k: number, kids: string[]) => {
+      const b = get(n); if (!b) return;
+      b.scale.x *= k; b.scale.z *= k;
+      for (const c of kids) { const q = get(c); if (q) { q.scale.x /= k; q.scale.z /= k; } }
+    };
+    const limb = 0.9 + 0.24 * build + (male ? 0.08 : 0);
+    thick('upperarm01_L', limb, ['upperarm02_L']); thick('upperarm02_L', 1, []); thick('lowerarm01_L', 0.96 + 0.1 * build + (male ? 0.06 : 0), ['lowerarm02_L']);
+    thick('upperarm01_R', limb, ['upperarm02_R']); thick('lowerarm01_R', 0.96 + 0.1 * build + (male ? 0.06 : 0), ['lowerarm02_R']);
+    thick('upperleg01_L', 0.94 + 0.16 * build + (male ? 0.02 : 0), ['upperleg02_L']); thick('upperleg01_R', 0.94 + 0.16 * build + (male ? 0.02 : 0), ['upperleg02_R']);
+    thick('lowerleg01_L', 0.95 + 0.1 * build, ['lowerleg02_L']); thick('lowerleg01_R', 0.95 + 0.1 * build, ['lowerleg02_R']);
+    if (male) {
+      // broader chest and neck, flatter chest, narrower hips
+      const sp = get('spine03'); if (sp) { sp.scale.x *= 1.1; sp.scale.z *= 1.05; for (const c of sp.children) { c.scale.x /= 1.1; c.scale.z /= 1.05; } }
+      thick('neck01', 1.18, ['neck02']);
+    }
+    const shw = 1 + 0.22 * ((spec.shoulders ?? 0.5) - 0.5) + (male ? 0.08 : 0);
+    scaleBone('clavicle_L', shw, ['upperarm01_L']);
+    scaleBone('clavicle_R', shw, ['upperarm01_R']);
+    const bust = male ? 0.3 : 0.75 + 0.6 * ((spec.bust ?? 0.5) - 0.3);
     scaleBone('breast_L', bust); scaleBone('breast_R', bust);
-    const hips = 1 + 0.12 * (spec.build - 0.3) + (spec.gender === 'male' ? -0.05 : 0);
+    const hips = 1 + 0.12 * (build - 0.3) + (male ? -0.09 : 0);
     scaleBone('pelvis_L', hips, ['upperleg01_L']); scaleBone('pelvis_R', hips, ['upperleg01_R']);
     // face: jaw shape, chin, cheeks, eyes (offsets in model units; the head is ~0.025 units tall)
     // the jaw bone carries the lower lip too, so keep its moves small enough that the mouth never opens
     const jb = this.model.getObjectByName('jaw');
-    if (jb) jb.scale.set(1 + 0.05 * F.jaw + 0.09 * (F.chinWidth ?? 0), 1 + 0.03 * F.jaw, 1 + 0.03 * F.jaw);
+    if (jb) jb.scale.set(1 + 0.05 * F.jaw + 0.09 * (F.chinWidth ?? 0) + (male ? 0.08 : 0), 1 + 0.03 * F.jaw + (male ? 0.04 : 0), 1 + 0.03 * F.jaw + (male ? 0.03 : 0));
     nudge('jaw', 0, -0.00004 * Math.abs(F.chin ?? 0), 0.00016 * (F.chin ?? 0));
     for (const [n, sx] of [['risorius03_L', 1], ['risorius03_R', -1], ['levator06_L', 1], ['levator06_R', -1]] as [string, number][]) nudge(n, sx * 0.00028 * (F.cheekWidth ?? 0), 0, 0);
-    const eyeS = 1 + 0.35 * (F.eyeSize - 1);
+    const eyeS = 1 + 0.35 * (F.eyeSize - 1) - (male ? 0.06 : 0);
     for (const [n, sx] of [['eye_L', 1], ['eye_R', -1]] as [string, number][]) {
       scaleBone(n, eyeS);
       nudge(n, sx * 0.00018 * F.eyeSpacing, 0.00015 * F.eyeHeight, 0);
@@ -219,7 +254,7 @@ export class Humanoid {
       new THREE.Matrix4().multiplyMatrices(inv, new THREE.Matrix4().copy(this.root.matrixWorld).multiply(m)).decompose(obj.position, obj.quaternion, obj.scale);
       bone.add(obj);
     };
-    const hipH = (HIP_Y + SOLE) * this.scale;
+    const hipH = (HIP_Y + this.sole) * this.scale;
     if (w === 1) place(sword(), 'spine05', new THREE.Vector3(0.155, hipH - 0.06, -0.03), new THREE.Euler(1.1, 0, -0.12));
     else {
       place(sword(), 'spine01', new THREE.Vector3(0, hipH + 0.3, -0.13), new THREE.Euler(0, 0, 0.62));
@@ -263,12 +298,13 @@ export class Humanoid {
   private parentIdx: number[] = [];
 
   /** standing height in metres (for framing cameras) */
-  get height(): number { return (0.124 + SOLE) * this.scale; }
+  get height(): number { return (0.124 + this.sole) * this.scale; }
+  private get sole(): number { return this.flat ? FLAT_SOLE : SOLE; }
   /** eye-level height and head size (m) for close-up framing */
-  get faceY(): number { return (0.111 + SOLE) * this.scale; }
+  get faceY(): number { return (0.111 + this.sole) * this.scale; }
   get headSize(): number { return 0.025 * this.scale; }
 
-  get seatHeight(): number { return (HIP_Y + SOLE) * this.scale + (this.rig.pelvisY - RIG_HIP) * 0.92 * (this.scale / UNIT) - 0.06; }
+  get seatHeight(): number { return (HIP_Y + this.sole) * this.scale + (this.rig.pelvisY - RIG_HIP) * 0.92 * (this.scale / UNIT) - 0.06; }
 
   dispose(): void {
     for (const o of this.owned) o.dispose();

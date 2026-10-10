@@ -1,4 +1,5 @@
 /** Character builder data: everything about the player's look as a small JSON-serialisable spec. */
+import { OUTFIT_PALETTES } from './wardrobe';
 
 export type Gender = 'female' | 'male';
 
@@ -50,7 +51,7 @@ export interface CharacterSpec {
     glasses: number;   // 0 none, 1 round, 2 square, 3 shades
   };
   // hair
-  hair: { style: number; color: string; tip: string; sheen: string; bangs: number };
+  hair: { style: number; color: string; tip: string; sheen: string; bangs: number; /** base-model hairstyle (BASE_HAIR) */ base?: number };
   // outfit
   outfit: {
     top: number;       // 0 jacket, 1 vest, 2 long coat, 3 military coat, 4 dress
@@ -62,6 +63,8 @@ export interface CharacterSpec {
     primary: string; secondary: string; accent: string; trim: string; pants: string; bootColor: string; scarfColor: string; headbandColor: string; glow: string;
     scarf: boolean; katana: boolean; headband: boolean; wings: boolean;
     weapon: number;    // 0 none, 1 katana at the waist, 2 sword on the back, 3 twin swords crossed on the back
+    /** base-model outfit (OUTFITS): 0 the model's own clothes, 1.. generated outfits */
+    look?: number;
   };
 }
 
@@ -86,6 +89,11 @@ export const IRIS_COLORS = ['#3f8cff', '#27c4d8', '#2fbf6a', '#9ad82a', '#e6b23a
 export const OUTFIT_COLORS = ['#1b2352', '#34439a', '#2a7de1', '#27b9c9', '#2fbf6a', '#9ad82a', '#f2ecd8', '#e6b23a', '#ff8a2a', '#e83a3a', '#d83a9a', '#7a3ad8', '#2a2a36', '#6e4a2a'];
 
 export function defaultSpec(gender: Gender = 'female'): CharacterSpec {
+  const s = defaultSpec0(gender);
+  if (gender === 'male') Object.assign(s.outfit, OUTFIT_PALETTES[1]);
+  return s;
+}
+function defaultSpec0(gender: Gender): CharacterSpec {
   const f = gender === 'female';
   return {
     v: 1, gender, base: 0, height: f ? 0.97 : 1.04, shoulders: f ? 0.3 : 0.7, bust: f ? 0.5 : 0, build: f ? 0.2 : 0.7, head: f ? 1.05 : 0.98, skin: '#ffd6bd',
@@ -95,11 +103,11 @@ export function defaultSpec(gender: Gender = 'female'): CharacterSpec {
       mouth: f ? 0 : 3, mouthWidth: 1, mouthHeight: 0, blush: f ? 0.7 : 0.25, freckles: false, ears: 0, earSize: 1,
       shadow: '#7a5ae0', shadowAmt: f ? 0.35 : 0, lips: '#d0626f', lipAmt: f ? 0.4 : 0, beard: 0, scar: false, glasses: 0,
     },
-    hair: f ? { style: 1, color: '#14122a', tip: '#5a6fe0', sheen: '#8aa0ff', bangs: 1 } : { style: 0, color: '#1b1b2e', tip: '#34439a', sheen: '#7a8ad8', bangs: 1 },
+    hair: f ? { style: 1, color: '#14122a', tip: '#5a6fe0', sheen: '#8aa0ff', bangs: 1, base: 0 } : { style: 0, color: '#1b1b2e', tip: '#34439a', sheen: '#7a8ad8', bangs: 1, base: 1 },
     outfit: {
       top: 0, bottom: f ? 0 : 2, boots: 0, primary: '#1b2352', secondary: '#34439a', accent: '#d02e48', trim: '#e6b23a', pants: f ? '#242a49' : '#2a2f46', bootColor: '#181a26',
       scarfColor: '#d02e48', headbandColor: '#d02e48', glow: '#45ecff', scarf: true, katana: true, headband: true, wings: f,
-      hat: 0, hatColor: '#1b2352', gloveColor: '#f7f8fd', gloves: true, earrings: false, weapon: 1,
+      hat: 0, hatColor: '#1b2352', gloveColor: '#f7f8fd', gloves: f, earrings: false, weapon: 1, look: f ? 0 : 1,
     },
   };
 }
