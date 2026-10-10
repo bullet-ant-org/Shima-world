@@ -61,6 +61,7 @@ export class Game {
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
   private camSnap = false;
+  private atLift = false;
   private hud2!: Hud;
   stats: Stats = { hp: 100, energy: 100, honour: 25 };
   private honourT = 0;
@@ -220,6 +221,16 @@ export class Game {
     this.fade();
   }
 
+  /** tower elevator: straight up to the roof, hovering above it */
+  private roofTrip(): void {
+    const P = this.player, door = this.interiors.leave(this.npc);
+    P.room = null;
+    if (!door?.roof) return;
+    P.teleport(door.roof.x, door.roof.z);
+    P.mode = 'fly'; P.grounded = false; P.landing = false; P.boost = false; P.y = door.roof.y + 1.6; P.vy = 0;
+    this.camPitch = 0.3; this.camSnap = true; this.fade();
+  }
+
   private exitRoom(): void {
     const P = this.player, door = this.interiors.leave(this.npc);
     P.room = null;
@@ -317,7 +328,8 @@ export class Game {
     const doorTap = I.wasPressed('KeyG') || I.wasPressed('BtnDoor');
     const inside = this.interiors.inside;
     this.nearDoor = !inside && P.mode === 'ground' && !P.mount && P.grounded ? this.interiors.near(P.x, P.z) : null;
-    if (inside) { if (doorTap || (this.interiors.atExit(P.x, P.z) && P.vz > 0.4)) this.exitRoom(); }
+    this.atLift = !!inside && this.interiors.atLift(P.x, P.z);
+    if (inside) { if (doorTap && this.atLift) this.roofTrip(); else if (doorTap || (this.interiors.atExit(P.x, P.z) && P.vz > 0.4)) this.exitRoom(); }
     else if (this.nearDoor && doorTap) this.enterRoom(this.nearDoor);
     // zone banner + atmosphere target
     const isl = zoneAt(P.x, P.z) === 'sea' ? null : islandAt(P.x, P.z);
@@ -329,7 +341,7 @@ export class Game {
 
   /** Buttons reflect the flight state: FLY<->LAND, BOOST appears while flying, JUMP/RUN become UP/DOWN. */
   private updateFlightUi(): void {
-    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0) | (P.mount ? 8 : 0) | (P.nearHorse ? 16 : 0) | (this.nearDoor ? 32 : 0) | (P.room ? 64 : 0) | ((this.nearDoor?.seed ?? 0) << 8);
+    const P = this.player, key = (P.flying ? 1 : 0) | (P.boost ? 2 : 0) | (P.landing ? 4 : 0) | (P.mount ? 8 : 0) | (P.nearHorse ? 16 : 0) | (this.nearDoor ? 32 : 0) | (P.room ? 64 : 0) | ((this.nearDoor?.seed ?? 0) << 8) | (this.atLift ? 128 : 0);
     if (key === this.uiKey) return;
     this.uiKey = key;
     const $ = (id: string) => document.getElementById(id)!;
@@ -342,7 +354,7 @@ export class Game {
     $('ride-btn').classList.toggle('show', !!(P.mount || P.nearHorse));
     $('ride-btn').textContent = P.mount ? 'DISMOUNT' : 'RIDE';
     $('door-btn').classList.toggle('show', !!(this.nearDoor || P.room));
-    $('door-btn').textContent = P.room ? 'EXIT' : this.nearDoor ? 'ENTER ' + ROOM_NAMES[this.nearDoor.kind].toUpperCase() : 'ENTER';
+    $('door-btn').textContent = P.room ? (this.atLift ? 'ROOF (ELEVATOR)' : 'EXIT') : this.nearDoor ? 'ENTER ' + ROOM_NAMES[this.nearDoor.kind].toUpperCase() : 'ENTER';
     $('fly-btn').style.visibility = P.room ? 'hidden' : '';
   }
 

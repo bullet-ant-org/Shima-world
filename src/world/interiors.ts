@@ -22,7 +22,7 @@ import type { Room } from '../entities/entities';
 export type RoomKind = 'auto' | 'elixir' | 'liquor' | 'ramen' | 'konbini' | 'house' | 'club' | 'temple' | 'tower';
 export const ROOM_NAMES: Record<RoomKind, string> = { auto: 'Auto Shop', elixir: 'Elixirs', liquor: 'Liquor Bar', ramen: 'Ramen', konbini: 'Konbini', house: 'House', club: 'Club', temple: 'Temple', tower: 'Tower Lobby' };
 const SHOP_KINDS: RoomKind[] = ['auto', 'elixir', 'liquor', 'ramen', 'konbini'];
-export interface Door { x: number; z: number; ry: number; kind: RoomKind; seed: number }
+export interface Door { x: number; z: number; ry: number; kind: RoomKind; seed: number; /** towers: roof height and building centre, for the elevator */ roof?: { x: number; y: number; z: number } }
 
 const ROOM_Y = 2600;      // rooms float this high above their door (far above the flight ceiling)
 const GRID = 32;
@@ -30,7 +30,7 @@ const GRID = 32;
 const shade = (c: V3, k: number): V3 => [Math.min(1, c[0] * k), Math.min(1, c[1] * k), Math.min(1, c[2] * k)];
 
 /** furnished room contents in room-local metres (floor at y = 0, door in the +z wall at x = 0) */
-interface Plan { w: number; d: number; h: number; lit: MB; glow: MB; solids: number[][]; people: [number, number, number, Act, number, number][]; light: number }
+interface Plan { w: number; d: number; h: number; lit: MB; glow: MB; solids: number[][]; people: [number, number, number, Act, number, number][]; light: number; lift?: [number, number] }
 
 function shell(w: number, d: number, h: number, floor: V3, wall: V3, ceil: V3, lit: MB, glow: MB, door: V3): void {
   lit.box(0, -0.1, 0, w + 0.4, 0.2, d + 0.4, floor);
@@ -69,11 +69,36 @@ function shelfRow(lit: MB, glow: MB, r: () => number, x: number, z: number, len:
   }
 }
 
+/** finishing touches every room gets: crown moulding, framed pictures, corner plants, daylight windows */
+function decorate(P: Plan, r: () => number, opts: { windows?: boolean; plants?: boolean; pictures?: boolean; trim: V3 }): void {
+  const { w, d, h, lit, glow } = P;
+  lit.box(0, h - 0.12, -d / 2 + 0.06, w, 0.18, 0.12, opts.trim); lit.box(0, h - 0.12, d / 2 - 0.06, w, 0.18, 0.12, opts.trim);
+  for (const sx of [-1, 1]) lit.box(sx * (w / 2 - 0.06), h - 0.12, 0, 0.12, 0.18, d, opts.trim);
+  if (opts.windows) for (const sx of [-1, 1]) for (let z = -d / 2 + 2; z < d / 2 - 1.6; z += 3) {
+    lit.box(sx * (w / 2 - 0.03), h * 0.55, z, 0.06, h * 0.5 + 0.16, 1.9, opts.trim);
+    glow.box(sx * (w / 2 - 0.07), h * 0.55, z, 0.02, h * 0.5, 1.7, hex(0xcfe8ff), sx > 0 ? 2 : 1);
+    lit.box(sx * (w / 2 - 0.08), h * 0.55, z, 0.02, h * 0.5, 0.06, opts.trim);
+  }
+  if (opts.pictures) for (let k = 0; k < 2; k++) {
+    const x = -w / 4 + k * (w / 2), c = hex([0x2a6ad8, 0xd85a4a, 0x3aaa5a, 0xe8b23a][Math.floor(r() * 4)]);
+    lit.box(x, h * 0.62, -d / 2 + 0.05, 1.3, 0.9, 0.05, opts.trim); lit.box(x, h * 0.62, -d / 2 + 0.08, 1.1, 0.7, 0.02, c);
+    lit.box(x - 0.2, h * 0.58, -d / 2 + 0.095, 0.5, 0.3, 0.01, hex(0xf4f2ec));
+  }
+  if (opts.plants) for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const x = sx * (w / 2 - 0.6), z = sz * (d / 2 - (sz > 0 ? 1.8 : 0.6));
+    if (sz > 0 && Math.abs(x) < 1.5) continue;
+    lit.cyl(x, z, 0.28, 0.22, 0, 0.5, 10, hex(0xe8e4dc));
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; lit.cyl(x + Math.cos(a) * 0.18, z + Math.sin(a) * 0.18, 0.16, 0.04, 0.5, 1.2 + r() * 0.4, 5, hex(0x3a8a4a)); }
+    P.solids.push([x - 0.35, z - 0.35, x + 0.35, z + 0.35]);
+  }
+}
+
 function plan(kind: RoomKind, seed: number): Plan {
   const r = rand(seed * 7919 + 13), lit = new MB(), glow = new MB(), solids: number[][] = [], people: Plan['people'] = [];
   const solid = (x: number, z: number, w: number, d: number) => solids.push([x - w / 2, z - d / 2, x + w / 2, z + d / 2]);
   const person = (x: number, z: number, yaw: number, act: Act, v = -1, lift = 0) => people.push([x, z, yaw, act, v, lift]);
   let w = 12, d = 10, h = 4, light = 0xffe2b8;
+  const P0: { lift?: [number, number] } = {};
   switch (kind) {
     case 'konbini': {
       w = 14; d = 11; light = 0xf4f8ff;
@@ -175,6 +200,52 @@ function plan(kind: RoomKind, seed: number): Plan {
       person(w / 2 - 0.5, 1, -Math.PI / 2, Act.Vend); person(w / 2 - 2.4, 3, Math.PI / 2, Act.Talk);
       break;
     }
+    case 'tower': {
+      w = 18; d = 14; h = 5.4; light = 0xfff2e0;
+      shell(w, d, h, hex(0xece8e2), hex(0xf2f0ec), hex(0xfafaf8), lit, glow, hex(0x8a8e96));
+      for (let x = -4; x <= 4; x++) for (let z = -3; z <= 3; z++) if ((x + z) % 2 === 0) lit.box(x * 2, 0.09, z * 2, 1.98, 0.01, 1.98, hex(0xc8c0b4), 4); // marble checks
+      lit.box(0, 0.1, 1, 6, 0.01, 8, hex(0x7a2a2a), 4); lit.box(0, 0.11, 1, 5.6, 0.01, 7.6, hex(0x9a3a3a), 4);              // runner carpet
+      for (const x of [-6, 6]) for (const z of [-3, 3]) { lit.cyl(x, z, 0.45, 0.45, 0, h, 16, hex(0xf4f2ec)); lit.cyl(x, z, 0.6, 0.6, 0, 0.3, 16, hex(0xc8c0b4)); lit.cyl(x, z, 0.6, 0.55, h - 0.35, h, 16, hex(0xc8c0b4)); solids.push([x - 0.6, z - 0.6, x + 0.6, z + 0.6]); }
+      // elevator bank on the back wall: brushed steel doors, call buttons, floor indicators
+      for (const x of [-4.5, -1.5, 1.5, 4.5]) {
+        lit.box(x, 1.4, -d / 2 + 0.08, 2.0, 2.9, 0.12, hex(0x8a8e96)); lit.box(x - 0.48, 1.35, -d / 2 + 0.15, 0.94, 2.6, 0.04, hex(0xc8ccd4)); lit.box(x + 0.48, 1.35, -d / 2 + 0.15, 0.94, 2.6, 0.04, hex(0xc8ccd4));
+        glow.box(x, 3.05, -d / 2 + 0.16, 0.6, 0.18, 0.02, hex(0xffb02e), 1); glow.box(x + 1.2, 1.3, -d / 2 + 0.16, 0.08, 0.16, 0.02, hex(0x8ae8ff), 1);
+      }
+      glow.box(0, 4.3, -d / 2 + 0.1, 6, 0.6, 0.02, hex(0x45ecff), 1);                                                     // company name band
+      // reception desk with a receptionist, security gates, waiting area
+      lit.box(5.6, 0.55, 2.2, 4, 1.1, 1.0, hex(0x2a2c34)); lit.box(5.6, 1.13, 2.2, 4.1, 0.06, 1.1, hex(0xf4f2ec)); glow.box(5.6, 0.6, 2.71, 3.6, 0.05, 0.02, hex(0x45ecff), 1); solids.push([3.5, 1.6, 7.7, 2.8]);
+      person(5.6, 1.3, Math.PI, Act.Vend, 1);
+      for (const x of [-1.6, 0, 1.6]) { lit.box(x - 0.55, 0.5, -1.2, 0.12, 1.0, 1.2, hex(0x5a5e66)); glow.box(x - 0.55, 1.02, -1.2, 0.1, 0.04, 1.0, hex(0x3aff8a), 1); solids.push([x - 0.65, -1.8, x - 0.45, -0.6]); }
+      for (const [x, z, ry] of [[-6.6, 3.8, 0], [-6.6, 1.8, 0]]) { lit.box(x, 0.3, z, 1.0, 0.6, 1.8, hex(0x3a4a6a)); lit.box(x - 0.4, 0.7, z, 0.25, 0.8, 1.8, hex(0x3a4a6a)); void ry; solids.push([x - 0.55, z - 0.95, x + 0.55, z + 0.95]); }
+      lit.box(-5.3, 0.25, 2.8, 0.9, 0.5, 1.6, hex(0x8a6a4a)); solids.push([-5.8, 2, -4.8, 3.6]);
+      person(-6.4, 3.8, Math.PI / 2, Act.Sit, -1, -0.05); person(-1.6, 2.6, 2.6, Act.Talk); person(-0.8, 3.1, -0.6, Act.Talk); person(3, -4.5, Math.PI, Act.Stand);
+      P0.lift = [0, -d / 2 + 1.2];
+      decorate({ w, d, h, lit, glow, solids, people, light }, r, { windows: true, plants: true, trim: hex(0xc8c0b4) });
+      break;
+    }
+    case 'temple': {
+      w = 16; d = 14; h = 6; light = 0xffc070;
+      shell(w, d, h, hex(0x8a5a32), hex(0xf2e8d4), hex(0x5a3a22), lit, glow, hex(0x6b4630));
+      for (let z = -d / 2 + 1; z < d / 2; z += 1) lit.box(0, 0.075, z, w, 0.005, 0.03, hex(0x6a4224), 4);                   // floorboards
+      for (let x = -3; x <= 3; x += 2) for (let z = -1; z <= 3; z += 2) lit.box(x, 0.085, z, 1.8, 0.02, 0.9, hex(0xc8c08a)); // tatami mats
+      for (const x of [-5.5, -2, 2, 5.5]) for (const z of [-4, 0, 4]) { if (Math.abs(x) < 3 && z === -4) continue; lit.cyl(x, z, 0.3, 0.3, 0, h, 12, hex(0xc8283c)); lit.cyl(x, z, 0.42, 0.42, 0, 0.25, 12, hex(0x3a2a1a)); solids.push([x - 0.4, z - 0.4, x + 0.4, z + 0.4]); }
+      for (let x = -6; x <= 6; x += 2) lit.box(x, h - 0.5, 0, 0.3, 0.4, d, hex(0x5a3a22));                                     // coffered beams
+      for (let z = -6; z <= 6; z += 2) lit.box(0, h - 0.45, z, w, 0.3, 0.3, hex(0x5a3a22));
+      // altar: stepped dais, golden statue with a halo, candles, offerings, incense burner
+      lit.box(0, 0.3, -d / 2 + 2, 7, 0.6, 3.2, hex(0x3a2418)); lit.box(0, 0.75, -d / 2 + 1.7, 5, 0.3, 2.2, hex(0x5a3a22));
+      lit.cyl(0, -d / 2 + 1.6, 0.9, 1.0, 0.9, 1.4, 16, hex(0xd8a441));                                                       // lotus base
+      lit.cyl(0, -d / 2 + 1.6, 0.75, 0.6, 1.4, 2.6, 14, hex(0xe8b84a)); lit.cyl(0, -d / 2 + 1.6, 0.42, 0.32, 2.6, 3.3, 12, hex(0xe8b84a));
+      lit.cyl(0, -d / 2 + 1.6, 0.36, 0.3, 3.3, 3.85, 12, hex(0xf2c85a)); lit.cyl(0, -d / 2 + 1.6, 0.14, 0.04, 3.85, 4.1, 8, hex(0xf2c85a));
+      glow.cyl(0, -d / 2 + 1.0, 1.4, 1.4, 3.0, 3.05, 24, hex(0xffd88a));                                                     // halo disc
+      for (const x of [-2.2, -1.6, 1.6, 2.2]) { lit.cyl(x, -d / 2 + 3.1, 0.06, 0.06, 0.6, 1.1, 6, hex(0xf4f2ec)); glow.cyl(x, -d / 2 + 3.1, 0.05, 0.02, 1.1, 1.25, 6, hex(0xffc050)); }
+      lit.cyl(0, -d / 2 + 4.2, 0.45, 0.35, 0, 0.8, 12, hex(0x6a6a5a)); glow.cyl(0, -d / 2 + 4.2, 0.3, 0.3, 0.8, 0.82, 10, hex(0xff8a3a)); // incense burner
+      solids.push([-3.5, -d / 2, 3.5, -d / 2 + 3.6], [-0.5, -d / 2 + 3.7, 0.5, -d / 2 + 4.7]);
+      for (let k = 0; k < 6; k++) { const x = -5 + k * 2; lit.cyl(x, -2, 0.02, 0.02, h - 1.6, h - 0.6, 4, hex(0x2a2a2a)); lit.cyl(x, -2, 0.32, 0.32, h - 2.3, h - 1.6, 10, hex(0xc8283c)); glow.cyl(x, -2, 0.27, 0.27, h - 2.25, h - 1.65, 10, hex(0xffb25a)); }
+      for (let k = 0; k < 3; k++) person(-1.8 + k * 1.8, -1.0, Math.PI, Act.Pray, -1, -0.3);
+      person(-4.2, 3, Math.PI * 0.8, Act.Pray); person(3.8, 1.8, 2.4, Act.Stand);
+      decorate({ w, d, h, lit, glow, solids, people, light }, r, { windows: true, trim: hex(0x5a3a22) });
+      break;
+    }
     case 'house': {
       w = 10; d = 8; h = 3.2; light = 0xffd8a0;
       shell(w, d, h, hex(0xc8c08a), hex(0xf4efe2), hex(0x8a6a4a), lit, glow, hex(0x6b4630));
@@ -195,13 +266,17 @@ function plan(kind: RoomKind, seed: number): Plan {
       break;
     }
   }
-  return { w, d, h, lit, glow, solids, people, light };
+  // finishing touches for the shops and homes
+  if (kind !== 'tower' && kind !== 'temple') decorate({ w, d, h, lit, glow, solids, people, light }, r, { pictures: kind === 'house' || kind === 'liquor' || kind === 'ramen', plants: kind !== 'auto' && kind !== 'club', windows: kind === 'house' || kind === 'konbini' || kind === 'ramen', trim: kind === 'club' ? hex(0x2a2838) : kind === 'house' ? hex(0x6b4630) : hex(0xd8d4cc) });
+  return { w, d, h, lit, glow, solids, people, light, lift: P0.lift };
 }
 
 export class Interiors {
   doors: Door[] = [];
   private grid = new Map<string, number[]>();
-  inside: { door: Door; group: THREE.Group; light: THREE.PointLight; room: Room } | null = null;
+  inside: { door: Door; group: THREE.Group; room: Room; lift?: [number, number] } | null = null;
+  /** one interior light that always exists (dimmed outside) so entering never changes the light count */
+  private light = new THREE.PointLight(0xffe2b8, 0, 30, 1);
 
   // own materials: no distance fog (the room floats far above the fogged world) and no surface texture
   private mat: THREE.MeshToonNodeMaterial;
@@ -209,14 +284,21 @@ export class Interiors {
 
   constructor(private scene: THREE.Scene, assets: Assets) {
     this.mat = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: assets.ramp, fog: false });
+    this.mat.color.setScalar(0.74);   // rooms are lit by the sky light too; keep pale walls from washing out
+    scene.add(this.light);
     const add = (d: Door) => { const k = Math.floor(d.x / GRID) + ',' + Math.floor(d.z / GRID); (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(this.doors.length); this.doors.push(d); };
     BUILDINGS.forEach((b, i) => {
       const t = b.spec.tpl;
-      if (t !== 'shop' && t !== 'club') return;
+      const tall = b.top > 30 && ['box', 'L', 'step', 'round', 'twin', 'podium', 'office', 'bank', 'hq', 'wedge'].includes(t);
+      if (t !== 'shop' && t !== 'club' && !tall) return;
       const off = t === 'shop' ? b.spec.d / 2 + 1.0 : b.hd + 1.2;
-      add({ x: b.x + Math.sin(b.ry) * off, z: b.z + Math.cos(b.ry) * off, ry: b.ry, kind: t === 'club' ? 'club' : SHOP_KINDS[b.spec.pal % 5], seed: i + 1 });
+      add({ x: b.x + Math.sin(b.ry) * off, z: b.z + Math.cos(b.ry) * off, ry: b.ry, kind: t === 'club' ? 'club' : tall ? 'tower' : SHOP_KINDS[b.spec.pal % 5], seed: i + 1, roof: tall ? { x: b.x, y: b.top, z: b.z } : undefined });
     });
     let n = 0;
+    for (const [k, depth] of [['temple', 13], ['shrine', 3.2]] as [string, number][]) for (const d of PROPS[k] ?? []) {
+      const off = depth * d.s + 1.4;
+      add({ x: d.x + Math.sin(d.ry) * off, z: d.z + Math.cos(d.ry) * off, ry: d.ry, kind: 'temple', seed: 7000 + n++ });
+    }
     for (const k of ['house0', 'house1', 'house2', 'cabin0', 'cabin1', 'cabin2']) for (const d of PROPS[k] ?? []) {
       const off = 4.1 * d.s + 0.9;
       add({ x: d.x + Math.sin(d.ry) * off, z: d.z + Math.cos(d.ry) * off, ry: d.ry, kind: 'house', seed: 5000 + n++ });
@@ -243,24 +325,31 @@ export class Interiors {
     const lit = new THREE.Mesh(P.lit.toGeometry(), this.mat); lit.receiveShadow = true; lit.castShadow = true;   // the ceiling keeps the sun out
     g.add(lit);
     if (!P.glow.empty) g.add(new THREE.Mesh(P.glow.toGeometry(), this.glowMat));
-    const light = new THREE.PointLight(P.light, 14, Math.max(P.w, P.d) * 1.8, 1);
+    const light = this.light;
+    light.color.setHex(P.light); light.intensity = 7; light.distance = Math.max(P.w, P.d) * 1.8;
     light.position.set(door.x, y0 + P.h - 0.6, door.z);
-    this.scene.add(g, light);
-    g.updateMatrixWorld(true); light.updateMatrixWorld(true);       // the scene doesn't auto-update world matrices
+    this.scene.add(g);
+    g.updateMatrixWorld(true); light.updateMatrixWorld(true);
     for (const [x, z, yaw, act, v, lift] of P.people) folk.pin(door.x + x, y0, door.z + z, yaw, act, v, lift);
     const room: Room = { cx: door.x, cz: door.z, y: y0, hw: P.w / 2, hd: P.d / 2, h: P.h, solids: P.solids };
-    this.inside = { door, group: g, light, room };
+    this.inside = { door, group: g, room, lift: P.lift };
     return { room, x: door.x, y: y0, z: door.z + P.d / 2 - 1.3, yaw: Math.PI };
   }
 
   leave(folk: Townsfolk): Door | null {
     const s = this.inside; if (!s) return null;
-    this.scene.remove(s.group, s.light);
+    this.scene.remove(s.group);
     s.group.traverse((o) => { if ((o as THREE.Mesh).geometry) (o as THREE.Mesh).geometry.dispose(); });
-    s.light.dispose();
+    this.light.intensity = 0;
     folk.unpinAll();
     this.inside = null;
     return s.door;
+  }
+
+  /** standing at the elevators (towers) */
+  atLift(x: number, z: number): boolean {
+    const s = this.inside; if (!s?.lift) return false;
+    return Math.abs(x - s.room.cx - s.lift[0]) < 5.5 && Math.abs(z - s.room.cz - s.lift[1]) < 1.0;
   }
 
   /** standing by the inside of the door you came in through */
