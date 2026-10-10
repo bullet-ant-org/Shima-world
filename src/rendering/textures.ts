@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu';
 import { abs, attribute, dot, float, max, mix, normalWorld, positionWorld, step, texture, time, vec2, vec3, vec4 } from 'three/tsl';
 
-const S = 384; // texels per pattern tile
+const S = 512; // texels per pattern tile
 
 // ---- tileable value noise -------------------------------------------------------------------------------------------------------------
 function rnd(i: number, j: number, s: number): number {
@@ -109,7 +109,7 @@ function atlas(r: Pat, g: Pat, b: Pat, a: Pat): THREE.DataTexture {
     data[o] = r(u, v, px) * 255; data[o + 1] = g(u, v, px) * 255; data[o + 2] = b(u, v, px) * 255; data[o + 3] = a(u, v, px) * 255;
   }
   const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 8;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 16;
   t.needsUpdate = true;
   return t;
 }
@@ -145,7 +145,9 @@ export function detailNode(tex: THREE.Texture, s1: number, s2: number) {
   const t1 = texture(tex, p.mul(s1)), t2 = texture(tex, p.mul(s2).add(vec2(0.37, 0.71)));
   const k = attribute('kind', 'float');
   const w = vec4(max(float(0), float(1).sub(abs(k))), max(float(0), float(1).sub(abs(k.sub(1)))), max(float(0), float(1).sub(abs(k.sub(2)))), max(float(0), float(1).sub(abs(k.sub(3)))));
-  const d = dot(t1, w).mul(dot(t2, w)).mul(1.38).clamp(0.3, 1.25);
+  // contrast curve around mid-grey keeps the painted detail crisp instead of washed out
+  const raw = dot(t1, w).mul(dot(t2, w)).mul(1.38);
+  const d = raw.sub(1).mul(1.35).add(1).clamp(0.25, 1.3);
   return vec3(d, d, d);
 }
 

@@ -34,11 +34,15 @@ const _pb = new THREE.Vector3(1, 0, 0);
 const _c = new THREE.Color();
 const ZUP = new THREE.Vector3(0, 0, 1);
 
+let DETAIL = 1;
+/** global tessellation multiplier for lofts built from now on (e.g. 0.65 on low-end devices); returns the previous value */
+export function setLoftDetail(d: number): number { const p = DETAIL; DETAIL = d; return p; }
+
 export function loft(o: LoftOpts): THREE.BufferGeometry {
   const pts = o.path.map((v) => new THREE.Vector3(v[0], v[1], v[2]));
   if (pts.length === 1) pts.push(pts[0].clone().add(new THREE.Vector3(0, -1e-3, 0)));
   const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-  const steps = o.steps ?? 16, seg = o.seg ?? 12;
+  const steps = Math.max(2, Math.round((o.steps ?? 16) * DETAIL)), seg = Math.max(5, Math.round((o.seg ?? 12) * DETAIL));
   const cs = o.capStart ? 1 : 0, ce = o.capEnd ? 1 : 0;
   const nv = (steps + 1) * seg + cs + ce;
   const pos = new Float32Array(nv * 3), col = new Float32Array(nv * 3);

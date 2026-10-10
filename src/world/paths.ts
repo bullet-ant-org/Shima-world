@@ -12,6 +12,10 @@ export interface Path {
   n: number; x: Float32Array; z: Float32Array; tx: Float32Array; tz: Float32Array; len: Float32Array; total: number;
   /** deck elevation per sample (sky roads only) */
   ys?: Float32Array;
+  /** 1 where this sample lies inside another road's footprint (an intersection): no sidewalk/curb/markings there */
+  junc?: Uint8Array;
+  /** 1 where this stone sample is already paved by an earlier path (merge cleanly, no double slabs) */
+  dup?: Uint8Array;
 }
 export interface Seg { path: Path; i: number }
 export interface MeshOut { pos: number[]; nor: number[]; col: number[]; idx: number[]; kind?: number[]; lights?: MeshOut }
@@ -127,6 +131,39 @@ export class PathNet {
 
   segsIn(cx: number, cz: number): Seg[] { return this.chunkIdx.get(cx + ',' + cz) ?? []; }
 
+  /**
+   * Call once after every path exists: marks intersection samples on city roads (so sidewalks, curbs and lane paint stop at
+   * the junction and a zebra crossing is painted at its edge) and stone samples already covered by an earlier path.
+   */
+  finalize(): void {
+    const roads = (k: PathKind) => k === 'avenue' || k === 'street';
+    for (const p of this.paths) {
+      if (roads(p.kind)) {
+        p.junc = new Uint8Array(p.n);
+        for (let i = 0; i < p.n; i++) {
+          for (const s of this.around(p.x[i], p.z[i], 40)) {
+            if (s.path === p || !roads(s.path.kind)) continue;
+            const d = Math.hypot(s.path.x[s.i] - p.x[i], s.path.z[s.i] - p.z[i]);
+            if (d < s.path.width / 2 + 4.2 + 1.5) { p.junc[i] = 1; break; }
+          }
+        }
+      } else if (p.kind === 'stone') {
+        p.dup = new Uint8Array(p.n);
+        for (let i = 0; i < p.n; i++) {
+          for (const s of this.around(p.x[i], p.z[i], 20)) {
+            if (s.path.kind !== 'stone' || s.path.id >= p.id) continue;
+            if (Math.hypot(s.path.x[s.i] - p.x[i], s.path.z[s.i] - p.z[i]) < s.path.width / 2 + 0.5) { p.dup[i] = 1; break; }
+          }
+        }
+      }
+    }
+  }
+  private around(x: number, z: number, r: number): Seg[] {
+    const out: Seg[] = [], cx = Math.floor(x / this.CELL), cz = Math.floor(z / this.CELL), k = Math.ceil(r / this.CELL);
+    for (let i = -k; i <= k; i++) for (let j = -k; j <= k; j++) { const l = this.grid.get(cx + i + ',' + (cz + j)); if (l) for (const s of l) out.push(s); }
+    return out;
+  }
+
   // ------------------------------------------------------------------------------------------------------------------
   /** Merged ribbon mesh arrays for every path segment whose midpoint lies in chunk (cx,cz). */
   buildChunkMesh(cx: number, cz: number): MeshOut | null {
@@ -140,22 +177,29 @@ export class PathNet {
       const tk = p.kind === 'stone' || p.kind === 'sky' ? 2 : 1;
       if (p.kind === 'sky') { this.skySeg(o, p, i); for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk); continue; }
       if (heightAt((p.x[i] + p.x[i + 1]) / 2, (p.z[i] + p.z[i + 1]) / 2) < 0.8) continue; // no paving over water / river beds
-      if (p.kind === 'stone') this.stoneSeg(o, p, i); else if (p.kind === 'runway') this.runwaySeg(o, p, i); else this.roadSeg(o, p, i);
+      if (p.kind === 'avenue' || p.kind === 'street') { this.roadSeg(o, p, i); continue; }
+      if (p.kind === 'stone') this.stoneSeg(o, p, i); else this.runwaySeg(o, p, i);
       for (let k = v0; k < o.pos.length / 3; k++) o.kind!.push(tk);
     }
     return o.idx.length || o.lights?.idx.length ? o : null;
   }
 
   private stoneSeg(o: MeshOut, p: Path, i: number): void {
+    if (p.dup && p.dup[i] && p.dup[i + 1]) return;
     const x0 = p.x[i], z0 = p.z[i], x1 = p.x[i + 1], z1 = p.z[i + 1];
     const n0x = -p.tz[i], n0z = p.tx[i], n1x = -p.tz[i + 1], n1z = p.tx[i + 1], hw = p.width / 2;
     const y = (x: number, z: number) => heightAt(x, z) + 0.16;
     // mortar bed
     const edge = (x: number, z: number, nx: number, nz: number, f: number): [number, number, number] => [x + nx * hw * f, 0, z + nz * hw * f];
     const quad = (a: [number, number, number], b: [number, number, number], c: [number, number, number], d: [number, number, number], rgb: number[], lift: number) => {
-      const base = o.pos.length / 3;
-      for (const v of [a, b, c, d]) { o.pos.push(v[0], y(v[0], v[2]) + lift, v[2]); o.nor.push(0, 1, 0); o.col.push(rgb[0], rgb[1], rgb[2]); }
-      o.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      // split across the width so wide paths follow cross-slopes instead of floating / sinking
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 2.5));
+      for (let k = 0; k < n; k++) {
+        const t0 = k / n, t1 = (k + 1) / n, L = (p: [number, number, number], q: [number, number, number], t: number) => [p[0] + (q[0] - p[0]) * t, p[2] + (q[2] - p[2]) * t];
+        const base = o.pos.length / 3;
+        for (const v of [L(a, b, t0), L(a, b, t1), L(d, c, t1), L(d, c, t0)]) { o.pos.push(v[0], y(v[0], v[1]) + lift, v[1]); o.nor.push(0, 1, 0); o.col.push(rgb[0], rgb[1], rgb[2]); }
+        o.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      }
     };
     quad(edge(x0, z0, n0x, n0z, 1), edge(x0, z0, n0x, n0z, -1), edge(x1, z1, n1x, n1z, -1), edge(x1, z1, n1x, n1z, 1), [0.2, 0.2, 0.21], 0);
     // three irregular slabs across, inset so the mortar shows between them
@@ -217,35 +261,56 @@ export class PathNet {
     if (p.width > 30 && (i < 5 || i > p.n - 7)) for (let k = -4; k <= 4; k++) if (k) strip(k * 4.4 - 0.9, k * 4.4 + 0.9, 0.17, [0.95, 0.95, 0.95]);
   }
 
+  /** City road: dark asphalt, painted lanes, raised paved sidewalks with curbs; all of it stops at junctions, with zebra crossings. */
   private roadSeg(o: MeshOut, p: Path, i: number): void {
     const x0 = p.x[i], z0 = p.z[i], x1 = p.x[i + 1], z1 = p.z[i + 1];
     const n0x = -p.tz[i], n0z = p.tx[i], n1x = -p.tz[i + 1], n1z = p.tx[i + 1], hw = p.width / 2, sw = 4.2;
     const H = (x: number, z: number) => heightAt(x, z);
-    const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, rgb: number[]) => {
-      o.pos.push(x, y, z); o.nor.push(nx, ny, nz); o.col.push(rgb[0], rgb[1], rgb[2]);
+    const j0 = p.junc ? p.junc[i] : 0, j1 = p.junc ? p.junc[i + 1] : 0, inJ = j0 || j1;
+    const edgeIn = !j0 && j1, edgeOut = j0 && !j1; // first / last segment touching a junction
+    const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, rgb: number[], k: number) => {
+      o.pos.push(x, y, z); o.nor.push(nx, ny, nz); o.col.push(rgb[0], rgb[1], rgb[2]); o.kind!.push(k);
     };
-    const flat = (a: number, b: number, lift: number, rgb: number[]) => { // strip between lateral offsets a..b
-      const base = o.pos.length / 3;
-      push(x0 + n0x * a, H(x0 + n0x * a, z0 + n0z * a) + lift, z0 + n0z * a, 0, 1, 0, rgb);
-      push(x0 + n0x * b, H(x0 + n0x * b, z0 + n0z * b) + lift, z0 + n0z * b, 0, 1, 0, rgb);
-      push(x1 + n1x * b, H(x1 + n1x * b, z1 + n1z * b) + lift, z1 + n1z * b, 0, 1, 0, rgb);
-      push(x1 + n1x * a, H(x1 + n1x * a, z1 + n1z * a) + lift, z1 + n1z * a, 0, 1, 0, rgb);
-      o.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    /** strip between lateral offsets a..b along [t0,t1] of the segment, split across the width to follow the ground */
+    const flat = (a: number, b: number, lift: number, rgb: number[], k = 1, t0 = 0, t1 = 1) => {
+      const n = Math.max(1, Math.ceil(Math.abs(b - a) / 3));
+      const P = (t: number, off: number): [number, number] => {
+        const nx = n0x + (n1x - n0x) * t, nz = n0z + (n1z - n0z) * t;
+        return [x0 + (x1 - x0) * t + nx * off, z0 + (z1 - z0) * t + nz * off];
+      };
+      for (let q = 0; q < n; q++) {
+        const u0 = a + ((b - a) * q) / n, u1 = a + ((b - a) * (q + 1)) / n, base = o.pos.length / 3;
+        for (const [t, u] of [[t0, u0], [t0, u1], [t1, u1], [t1, u0]]) { const [x, z] = P(t, u); push(x, H(x, z) + lift, z, 0, 1, 0, rgb, k); }
+        o.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      }
     };
-    const curb = (side: number, rgb: number[]) => { // vertical face between road level and sidewalk level
+    const curb = (side: number, rgb: number[]) => {
       const base = o.pos.length / 3, a = hw * side, nx0 = -n0x * side, nz0 = -n0z * side;
-      for (const [x, z, nx, nz, lift] of [[x0, z0, n0x, n0z, 0.12], [x0, z0, n0x, n0z, 0.34], [x1, z1, n1x, n1z, 0.34], [x1, z1, n1x, n1z, 0.12]] as number[][]) {
-        push(x + nx * a, H(x + nx * a, z + nz * a) + lift, z + nz * a, nx0, 0, nz0, rgb);
+      for (const [x, z, nx, nz, lift] of [[x0, z0, n0x, n0z, 0.12], [x0, z0, n0x, n0z, 0.32], [x1, z1, n1x, n1z, 0.32], [x1, z1, n1x, n1z, 0.12]] as number[][]) {
+        push(x + nx * a, H(x + nx * a, z + nz * a) + lift, z + nz * a, nx0, 0, nz0, rgb, 3);
       }
       o.idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 2, base + 1, base, base + 3, base + 2);
     };
-    const g = 0.92 + hash2(Math.floor(x0 * 0.4), Math.floor(z0 * 0.4)) * 0.16;
-    const gravel = [0.5 * g, 0.46 * g, 0.4 * g], walk = [0.68 * g, 0.66 * g, 0.62 * g];
-    flat(-hw, hw, 0.12, gravel);
-    flat(hw, hw + sw, 0.34, walk); flat(-hw - sw, -hw, 0.34, walk);
-    curb(1, [0.45, 0.44, 0.42]); curb(-1, [0.45, 0.44, 0.42]);
-    // wheel-worn darker lanes in the gravel
-    flat(-hw * 0.55, -hw * 0.35, 0.125, [0.42 * g, 0.39 * g, 0.34 * g]); flat(hw * 0.35, hw * 0.55, 0.125, [0.42 * g, 0.39 * g, 0.34 * g]);
-    if (p.kind === 'avenue' && (i & 1) === 0) flat(-0.2, 0.2, 0.13, [0.9, 0.78, 0.3]); // dashed centre line
+    const g = 0.94 + hash2(Math.floor(x0 * 0.3), Math.floor(z0 * 0.3)) * 0.08;
+    const asphalt = [0.2 * g, 0.205 * g, 0.22 * g], walk = [0.66 * g, 0.64 * g, 0.6 * g], white = [0.92, 0.92, 0.9], yellow = [0.95, 0.78, 0.22];
+    if (inJ) {
+      // junction box: plain asphalt wide enough to meet the crossing road's kerbs
+      flat(-hw - (j0 && j1 ? sw : 0), hw + (j0 && j1 ? sw : 0), 0.12, asphalt, 1);
+      if (edgeIn || edgeOut) {
+        // sidewalk + kerb end at the junction edge; zebra stripes across the carriageway on the outer half of the segment
+        const tA = edgeIn ? 0 : 0.5, tB = edgeIn ? 0.5 : 1;
+        flat(hw, hw + sw, 0.32, walk, 3, tA, tB); flat(-hw - sw, -hw, 0.32, walk, 3, tA, tB);
+        for (let u = -hw + 0.6; u < hw - 0.5; u += 1.4) flat(u, u + 0.7, 0.13, white, 1, edgeIn ? 0.12 : 0.55, edgeIn ? 0.45 : 0.88);
+      }
+      return;
+    }
+    flat(-hw, hw, 0.12, asphalt, 1);
+    flat(hw, hw + sw, 0.32, walk, 3); flat(-hw - sw, -hw, 0.32, walk, 3);
+    curb(1, [0.5, 0.5, 0.5]); curb(-1, [0.5, 0.5, 0.5]);
+    flat(hw - 0.55, hw - 0.35, 0.13, white, 1); flat(-hw + 0.35, -hw + 0.55, 0.13, white, 1);       // edge lines
+    if (p.kind === 'avenue') {
+      flat(-0.32, -0.14, 0.13, yellow, 1); flat(0.14, 0.32, 0.13, yellow, 1);                         // double centre line
+      if ((i & 1) === 0) for (const s of [-1, 1]) flat(s * hw * 0.5 - 0.1, s * hw * 0.5 + 0.1, 0.13, white, 1); // lane dashes
+    } else if ((i & 1) === 0) flat(-0.1, 0.1, 0.13, white, 1);
   }
 }

@@ -171,6 +171,23 @@ export function blockTop(x: number, z: number): number {
   return -Infinity;
 }
 export const blocked = (x: number, z: number): boolean => blockTop(x, z) > -Infinity;
+
+/** footprint radius of placed props that cover the ground (no grass grows there) */
+const COVER: Record<string, number> = { house0: 8, house1: 9, house2: 8, cabin0: 8, cabin1: 9, cabin2: 8, temple: 22, shrine: 6, barn: 10, pagoda: 9, pagodaIce: 9, stall0: 3, stall1: 3, stall2: 3, stall3: 3, field0: 12, field1: 12, field2: 12, field3: 12, haystack: 2, sanmon: 9, greatTree: 4, toroBig: 2 };
+let coverGrid: Map<string, { x: number; z: number; r: number }[]> | null = null;
+/** true where a building / field / stall sits */
+export function covered(x: number, z: number): boolean {
+  if (!coverGrid) {
+    coverGrid = new Map();
+    for (const [k, r] of Object.entries(COVER)) for (const d of PROPS[k] ?? []) {
+      const rr = r * d.s, key = Math.floor(d.x / 32) + ',' + Math.floor(d.z / 32);
+      (coverGrid.get(key) ?? coverGrid.set(key, []).get(key)!).push({ x: d.x, z: d.z, r: rr });
+    }
+  }
+  const cx = Math.floor(x / 32), cz = Math.floor(z / 32);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const c of coverGrid.get(cx + i + ',' + (cz + j)) ?? []) if (Math.hypot(c.x - x, c.z - z) < c.r) return true;
+  return false;
+}
 export const inCity = (x: number, z: number) => Math.hypot(x - CITY_C.x, z - CITY_C.z) < 900;
 
 /** Street furniture along the city roads: lamps, benches, traffic lights at crossings. */
@@ -392,8 +409,15 @@ function farmPlot(x: number, z: number, ry: number, rng: () => number): boolean 
 
 function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: number } | null, rng: () => number, snow = false): void {
   if (link) {
-    const mx = (cx + link.x) / 2 + (rng() - 0.5) * 90, mz = (cz + link.z) / 2 + (rng() - 0.5) * 90;
-    const lane = stoneAt([[link.x, link.z], [mx, mz], [cx, cz]], 5, isl);
+    // join the closest point of the existing network (not the village centre), so lanes branch off instead of fanning out
+    let jx = link.x, jz = link.z, best = Infinity;
+    for (const p of NET.paths) {
+      if (p.kind !== 'stone' || p.island !== isl) continue;
+      for (let i = 0; i < p.n; i += 2) { const d = Math.hypot(p.x[i] - cx, p.z[i] - cz); if (d < best) { best = d; jx = p.x[i]; jz = p.z[i]; } }
+    }
+    const dx = cx - jx, dz = cz - jz, L = Math.hypot(dx, dz) || 1, bend = (rng() - 0.5) * Math.min(60, L * 0.25);
+    const mx = jx + dx * 0.5 - (dz / L) * bend, mz = jz + dz * 0.5 + (dx / L) * bend;
+    const lane = stoneAt([[jx, jz], [mx, mz], [cx - (dx / L) * 14, cz - (dz / L) * 14]], 5, isl);
     stallsAlong(lane, 70, 0.35, rng);
   }
   claim(cx, cz, 8);
@@ -525,5 +549,6 @@ export function buildLayout(): void {
     prop('torii', x, z, face(0.05, -1), 2.3 - t * 0.9);
   }
   prop('shrine', VOLCANO.x + 80, VOLCANO.z + 600, face(0, -1), 1.4);
+  NET.finalize();
   void CHUNK;
 }

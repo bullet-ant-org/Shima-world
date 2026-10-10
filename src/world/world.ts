@@ -7,7 +7,7 @@ import {
   benchGeo, barnGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
-import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear } from './layout';
+import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered } from './layout';
 import {
   CHUNK, GOD, HILL, ISLANDS, LAKE, RICE, SPIRE, VOLCANO, heightAt, island, islandAt, lavaAt, mulberry32, noise2, riverX, sstep, type IslandId,
 } from './terrain';
@@ -409,7 +409,7 @@ export class World {
     const cliff = sstep(0.7, 1.25, grad);
     let k = 0;
     switch (id) {
-      case 'valley': k = y < 2.6 ? 1 : y > 90 ? 2 * sstep(90, 220, y) : 0; break;
+      case 'valley': k = y < 2.6 && this.coastal(x, z) ? 1 : y > 90 ? 2 * sstep(90, 220, y) : 0; break;
       case 'city': k = 1; break;
       case 'god': k = 2 - 2 * sstep(0.55, 0.85, noise2(x * 0.012 + 3, z * 0.012)) * 0.85; break; // ancient stone, mossy patches
       case 'ember': k = 1; break;
@@ -417,6 +417,26 @@ export class World {
       default: k = y < 2.4 ? 1 : 0;
     }
     return k + (2 - k) * cliff;
+  }
+
+  /** grass colour at a ground point, or false where none grows (paths, roads, rock, snow, sand, water, city, buildings, fields) */
+  grassAt(x: number, z: number, out: THREE.Color): boolean {
+    const isl = islandAt(x, z);
+    if (!isl || (isl.id !== 'valley' && isl.id !== 'islet' && isl.id !== 'god')) return false;
+    const y = heightAt(x, z); if (y < 2.4) return false;
+    const gx = heightAt(x - 1, z) - heightAt(x + 1, z), gz = heightAt(x, z - 1) - heightAt(x, z + 1), grad = Math.hypot(gx, gz) / 2;
+    const k = this.terrainKind(x, z, y, grad);
+    if (k > (isl.id === 'god' ? 1.2 : 0.35) || grad > 0.75) return false;
+    if (NET.edgeDist(x, z, 6) < 0.8 || covered(x, z)) return false;
+    this.terrainColor(x, z, y, grad, out);
+    out.multiplyScalar(1.05);
+    return true;
+  }
+
+  /** near open water (a beach), as opposed to a low inland meadow */
+  private coastal(x: number, z: number): boolean {
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; if (heightAt(x + Math.cos(a) * 45, z + Math.sin(a) * 45) < -0.5) return true; }
+    return false;
   }
 
   private terrainColor(x: number, z: number, y: number, grad: number, out: THREE.Color): void {
@@ -438,7 +458,7 @@ export class World {
         out.setRGB(0.3 + n * 0.1, 0.55 + n * 0.1, 0.24);
         if (y < 60) out.lerp(TMP.setRGB(0.95, 0.7, 0.8), sstep(0.5, 0.68, noise2(x * 0.012 + 9, z * 0.012)) * 0.28); // fallen petals under the groves
         if (x > RICE.x0 && x < RICE.x1 && z > RICE.z0 && z < RICE.z1) { const st = Math.floor(z / 6) & 1; out.setRGB(st ? 0.5 : 0.35, st ? 0.72 : 0.62, st ? 0.28 : 0.3); }
-        if (y < 2.2) out.setRGB(0.76, 0.7, 0.5);
+        if (y < 2.2 && this.coastal(x, z)) out.setRGB(0.76, 0.7, 0.5);
         else if (y > 90) out.lerp(TMP.setRGB(0.58, 0.58, 0.6), sstep(90, 220, y));
         out.lerp(TMP.setRGB(0.5, 0.48, 0.46), cliff * 0.85);
         return;

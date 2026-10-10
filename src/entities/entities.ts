@@ -33,8 +33,8 @@ export class Player {
   /** a free horse close enough to mount (for the RIDE button) */
   nearHorse: Horse | null = null;
 
-  constructor(assets: Assets, spawn: { x: number; z: number }, spec?: CharacterSpec, ink = true) {
-    this.hero = new Hero(assets, spec ? normalize(spec) : defaultSpec(), ink);
+  constructor(assets: Assets, spawn: { x: number; z: number }, spec?: CharacterSpec, ink = true, detail = 1) {
+    this.hero = new Hero(assets, spec ? normalize(spec) : defaultSpec(), ink, detail);
     this.group = this.hero.root;
     this.x = spawn.x; this.z = spawn.z;
     this.y = heightAt(this.x, this.z);

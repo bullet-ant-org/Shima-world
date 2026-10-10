@@ -7,6 +7,7 @@ import { Particles, SpeedLines, HoverRing } from './entities/fx';
 import { Sky } from './rendering/sky';
 import { NpcSystem, Player, RemotePlayers, TrafficSystem } from './entities/entities';
 import { Herd } from './entities/horse';
+import { Grass } from './rendering/grass';
 import { PASTURES } from './world/layout';
 import { Input } from './core/input';
 import { Network } from './network/network';
@@ -38,6 +39,8 @@ export class Game {
   private world!: World;
   private player!: Player;
   private herd!: Herd;
+  private grass: Grass | null = null;
+  private grassGood = 0;
   private npc!: NpcSystem;
   private traffic!: TrafficSystem;
   private skyTraffic!: TrafficSystem;
@@ -97,10 +100,16 @@ export class Game {
 
     // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
     const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
-    this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn, spec, q.outlines !== 'off');
+    this.player = new Player(this.assets, onLand ? { x: save!.x, z: save!.z } : ISLANDS[0].spawn, spec, q.outlines !== 'off', q.heroDetail);
     if (save) this.gameTime = save.time;
     this.scene.add(this.player.group);
 
+    if (q.grass > 0) {
+      this.grass = new Grass(q.grass, q.grassR, this.assets.ramp, (x, z, c) => this.world.grassAt(x, z, c));
+      this.grass.yAt = (x, z) => heightAt(x, z);
+      this.scene.add(this.grass.mesh);
+      for (let i = 0; i < 40; i++) this.grass.update(this.player.x, this.player.z, 200);
+    }
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
@@ -190,6 +199,7 @@ export class Game {
     // 3. simulation
     this.updatePlayer(dt);
     this.herd.update(dt, this.player.x, this.player.z);
+    if (this.grass) { this.grass.mesh.visible = this.player.y - heightAt(this.player.x, this.player.z) < 60; if (this.grass.mesh.visible) this.grass.update(this.player.x, this.player.z, this.player.flying ? 3 : 6); }
     this.gameTime = (this.gameTime + dt * (24 / 600)) % 24; // 10-minute day
     this.applyTime();
     this.updateWeather(dt);
@@ -375,6 +385,12 @@ export class Game {
 
   // ---------------- adaptive quality ----------------
   private adapt(frameMs: number): void {
+    // grass is the first thing to give way (density 1 -> 0.25), then resolution, then shadows; it comes back last
+    if (this.grass) {
+      const avg = this.dyn.avgMs, cur = this.grass.count / this.grass.mesh.instanceMatrix.count;
+      if (avg > 19 && cur > 0.26) { this.grass.setDensity(cur - 0.004); this.grassGood = 0; }
+      else if (avg < 14.5 && this.dyn.scale >= 0.99 && cur < 1 && ++this.grassGood > 120) { this.grass.setDensity(cur + 0.1); this.grassGood = 0; }
+    }
     if (this.dyn.update(frameMs)) {
       this.gr.setScale(this.dyn.scale);
     }

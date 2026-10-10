@@ -22,7 +22,7 @@ export function cyl(rt: number, rb: number, h: number, seg: number, x: number, y
 
 /** Painted facade atlas for far buildings: 8x8 cells of plaster with framed, reflective, curtained windows; separate emissive map for lit panes. */
 function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTexture } {
-  const S = 512, N = 8, cell = S / N;
+  const S = 1024, N = 8, cell = S / N;
   const a = document.createElement('canvas'); a.width = a.height = S;
   const b = document.createElement('canvas'); b.width = b.height = S;
   const ca = a.getContext('2d')!, cb = b.getContext('2d')!;
@@ -52,7 +52,7 @@ function windowTextures(): { map: THREE.CanvasTexture; emissive: THREE.CanvasTex
   }
   const mk = (c: HTMLCanvasElement) => {
     const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
     return t;
   };
   return { map: mk(a), emissive: mk(b) };
@@ -71,7 +71,7 @@ export class Assets {
   private surfaceTex = surfaceTexture();
   private terrainTex = terrainTexture();
   /** painted ground: vertex colour x painted grass/sand/rock/snow detail (channel per vertex `kind`) */
-  readonly terrain = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp }); m.colorNode = detailNode(this.terrainTex, 1 / 17, 1 / 2.7); return m; })();
+  readonly terrain = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp }); m.colorNode = detailNode(this.terrainTex, 1 / 11, 1 / 1.7); return m; })();
   /** painted architecture/props: vertex colour x plaster / wood grain / roof tile / stone masonry detail (per-vertex `kind`) */
   readonly props = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp }); m.colorNode = detailNode(this.surfaceTex, 1 / 3.4, 1 / 0.85); return m; })();
   /** moving things (hero, cars): toon vertex colours with no world-space texture, so nothing swims */
@@ -80,7 +80,7 @@ export class Assets {
   /** far-LOD facade: shared window atlas tinted per building by vertex colour */
   readonly building: THREE.MeshToonMaterial;
   /** all paved ground (gravel roads, sidewalks, flagstone paths) */
-  readonly ground = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); m.colorNode = detailNode(this.terrainTex, 1 / 6.5, 1 / 1.4); return m; })();
+  readonly ground = (() => { const m = new THREE.MeshToonNodeMaterial({ vertexColors: true, gradientMap: this.ramp, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); m.colorNode = detailNode(this.terrainTex, 1 / 5, 1 / 1.1); return m; })();
   /** unlit vertex-colour emissives: lit windows, neon, lantern flames, beacons */
   readonly lights = new THREE.MeshBasicMaterial({ vertexColors: true });
   readonly road = new THREE.MeshStandardMaterial({ color: 0x14161f, roughness: 0.7 });

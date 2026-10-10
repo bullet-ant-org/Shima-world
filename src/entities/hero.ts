@@ -21,7 +21,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { paint } from '../rendering/assets';
 import { defaultSpec, type CharacterSpec } from './character';
 import { hullGeo, outlineMat } from '../rendering/outline';
-import { ends, grad, keys, loft, type ColorFn, type LoftOpts, type V3 } from './sculpt';
+import { ends, grad, keys, loft, setLoftDetail, type ColorFn, type LoftOpts, type V3 } from './sculpt';
 
 export type Mode = 'ground' | 'fly' | 'brace' | 'land' | 'ride';
 export interface PoseIn { dt: number; mode: Mode; hs: number; speed: number; vy: number; grounded: boolean; boost: boolean; bank: number; gait?: number }
@@ -174,7 +174,8 @@ export class Hero {
   /** extra textures/geometries created for this hero, released by dispose() */
   private owned: { dispose(): void }[] = [];
 
-  constructor(assets: HeroAssets, spec: CharacterSpec = defaultSpec(), ink = true) {
+  constructor(assets: HeroAssets, spec: CharacterSpec = defaultSpec(), ink = true, detail = 1) {
+    const prevDetail = setLoftDetail(detail);
     const lit = assets.rig, glow = assets.pillarGlow;
     const F_ = spec.face, O = spec.outfit, H_ = spec.hair, male = spec.gender === 'male';
     const m = male ? 1 : 0, bd = spec.build;
@@ -610,6 +611,7 @@ export class Hero {
       ], lit, an);
     }
     this.hipY = HIP;
+    setLoftDetail(prevDetail);
   }
 
   /** release geometries, textures and materials created for this hero */

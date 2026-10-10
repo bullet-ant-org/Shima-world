@@ -15,6 +15,9 @@ export interface Quality {
   fogFar: number;
   outlines: 'hero' | 'all' | 'off'; // ink outlines: character only (default, cheap), everything, or none
   detailWindows: boolean; // protruding window geometry on nearby buildings (off: textured facades only)
+  grass: number;        // grass tufts around the player (0 = off)
+  grassR: number;       // grass field radius (m)
+  heroDetail: number;   // tessellation of the sculpted character / horses (1 = builder quality)
 }
 
 export interface DeviceProfile {
@@ -46,6 +49,9 @@ export function qualityFor(gpu: DeviceProfile['gpuTier'], cpu: DeviceProfile['cp
     rain: g === 'high' ? 2400 : g === 'mid' ? 1400 : 600,
     fogFar: g === 'high' ? 1300 : g === 'mid' ? 1000 : 750,
     detailWindows: g === 'high',
+    grass: g === 'high' ? 9000 : g === 'mid' ? 5000 : 2200,
+    grassR: g === 'high' ? 56 : g === 'mid' ? 44 : 32,
+    heroDetail: g === 'high' ? 0.9 : g === 'mid' ? 0.72 : 0.58,
   };
 }
 

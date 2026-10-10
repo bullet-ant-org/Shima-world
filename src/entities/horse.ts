@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ends, grad, keys, loft, type V3 } from './sculpt';
+import { ends, grad, keys, loft, setLoftDetail, type V3 } from './sculpt';
 import { hullGeo, outlineMat } from '../rendering/outline';
 import { heightAt, mulberry32 } from '../world/terrain';
 import { blocked } from '../world/layout';
@@ -32,6 +32,7 @@ export const SEAT_Y = 1.58;
 
 function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }> {
   const hit = cache.get(coat); if (hit) return hit;
+  const prevDetail = setLoftDetail(0.7);
   const C = COATS[coat % COATS.length], [leather, cloth] = SADDLES[coat % SADDLES.length];
   const out = {} as Record<Part, { g: THREE.BufferGeometry; hull: THREE.BufferGeometry }>;
   const put = (k: Part, geos: THREE.BufferGeometry[]) => { const g = mergeGeometries(geos)!; geos.forEach((x) => x.dispose()); out[k] = { g, hull: hullGeo(g) }; };
@@ -106,6 +107,7 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
   };
   put('fu', upper(false)); put('hu', upper(true)); put('fl', lower()); put('hl', lower());
   cache.set(coat, out);
+  setLoftDetail(prevDetail);
   return out;
 }
 const smoothT = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -237,7 +239,7 @@ export class Herd {
   update(dt: number, px: number, pz: number): void {
     for (const h of this.horses) {
       const d = Math.hypot(h.x - px, h.z - pz);
-      const vis = h.ridden || d < 260;
+      const vis = h.ridden || d < 170;
       h.root.visible = vis;
       if (!vis) continue;
       if (!h.ridden) h.wander(dt);
