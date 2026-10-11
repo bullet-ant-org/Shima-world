@@ -190,6 +190,56 @@ function buildCityLots(): void {
 
 export function buildingsNear(x: number, z: number): Building[] { return bIndex.get(bKey(x, z)) ?? []; }
 
+/** separating-axis test between two rotated rectangles (with a gap margin) */
+function rectsOverlap(a: { x: number; z: number; ry: number; hw: number; hd: number }, b: { x: number; z: number; ry: number; hw: number; hd: number }, gap: number): boolean {
+  const axes = [a.ry, a.ry + Math.PI / 2, b.ry, b.ry + Math.PI / 2];
+  for (const t of axes) {
+    const ax = Math.cos(t), az = -Math.sin(t);
+    const proj = (r: typeof a) => {
+      const c = Math.cos(r.ry), s = Math.sin(r.ry), ux = c, uz = -s, vx = s, vz = c;   // local x / z axes in world
+      const cen = r.x * ax + r.z * az, ext = Math.abs((ux * ax + uz * az) * r.hw) + Math.abs((vx * ax + vz * az) * r.hd);
+      return [cen - ext, cen + ext];
+    };
+    const [a0, a1] = proj(a), [b0, b1] = proj(b);
+    if (a1 + gap <= b0 || b1 + gap <= a0) return false;
+  }
+  return true;
+}
+
+/**
+ * Dense blocks: rows of narrow townhouses, corner shops and walk-ups along every city street, a second row behind them,
+ * with alleyways between neighbours and between the rows, filling the open ground the big lots left.
+ */
+function cityRows(): void {
+  const rng = mulberry32(8080), pick = <T,>(a: T[]) => a[Math.floor(rng() * a.length)];
+  const specs: BuildingSpec[] = [];
+  for (let i = 0; i < 18; i++) specs.push({ tpl: i % 6 === 5 ? 'machiya' : 'box', w: pick([8, 9, 10, 12]), d: pick([9, 10, 12]), fl: i % 6 === 5 ? 2 : 2 + Math.floor(rng() * 5), pal: Math.floor(rng() * 8), roof: Math.floor(rng() * 8), seed: 3000 + i, shop: rng() < 0.6 });
+  const clearOf = (b: Building) => {
+    const cx = Math.floor(b.x / BCELL), cz = Math.floor(b.z / BCELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const o of bIndex.get(cx + i + ',' + (cz + j)) ?? []) if (rectsOverlap(b, o, 2.2)) return false;
+    return true;
+  };
+  let n = 0;
+  for (const p of cityPaths) {
+    for (const side of [-1, 1]) {
+      for (let row = 0; row < 2; row++) {
+        let s = 6 + rng() * 6;
+        while (s < p.total - 6) {
+          const spec = pick(specs), f = NET.at(p, s / p.total), nx = -f.tz * side, nz = f.tx * side;
+          const off = p.width / 2 + 5.2 + spec.d / 2 + row * (spec.d + 3.2);         // sidewalk, then the front row, an alley, the back row
+          const x = f.x + nx * off, z = f.z + nz * off, ry = Math.atan2(-nx, -nz);
+          s += spec.w + 2.4 + rng() * 1.5;                                             // a narrow alley between neighbours
+          if (heightAt(x, z) < 1 || Math.hypot(x - SPIRE.x, z - SPIRE.z) < 90 || inPort(x, z, 8)) continue;
+          const b: Building = { x, z, cx: x, cz: z, ry, spec, hw: spec.w / 2, hd: spec.d / 2, top: 3 + spec.fl * 3.6 + 4 };
+          if (!footprintClear(x, z, ry, b.hw, b.hd, b.top) || !clearOf(b)) continue;
+          BUILDINGS.push(b); const k = bKey(x, z); (bIndex.get(k) ?? bIndex.set(k, []).get(k)!).push(b); n++;
+        }
+      }
+    }
+  }
+  void n;
+}
+
 /** Footprint test in building-local space that follows each design's real silhouette (so there are no invisible corners). */
 function inside(b: Building, lx: number, lz: number): boolean {
   const m = 0.15;
@@ -408,12 +458,12 @@ function sakuraValley(): void {
   prop('shrine', RICE.x1 + 6, RICE.z0 + 50, face(-1, 0), 1);
   // the village: houses fronting the loop path, tea houses at the plaza
   const rng = mulberry32(555);
-  along(vloop, 26, 13, 0.0, 1, (x, z, nx, nz, side) => {
-    if (!land(x, z, 3) || slopeAt(x, z) > 0.3 || Math.abs(x - riverX(z)) < 70) return;
-    prop('house' + Math.floor(rng() * 3), x, z, face(-nx, -nz), 0.95 + rng() * 0.2);
-    if (side > 0 && rng() < 0.45) { // second row behind
-      const bx = x + nx * 22, bz = z + nz * 22;
-      if (land(bx, bz, 3) && slopeAt(bx, bz) < 0.3) prop('house' + Math.floor(rng() * 3), bx, bz, face(-nx, -nz), 0.9 + rng() * 0.2);
+  // packed village: houses shoulder to shoulder along both sides of the loop, two more rows behind with lanes between
+  along(vloop, 13, 12, 0.0, 1, (x, z, nx, nz) => {
+    for (let row = 0; row < 3; row++) {
+      const bx = x + nx * row * 15, bz = z + nz * row * 15;
+      if (!land(bx, bz, 3) || slopeAt(bx, bz) > 0.32 || Math.abs(bx - riverX(bz)) < 60 || NET.edgeDist(bx, bz, 12) < 5.5 || !claim(bx, bz, 5.8)) continue;
+      prop('house' + Math.floor(rng() * 3), bx, bz, face(-nx, -nz), 0.88 + rng() * 0.2);
     }
   });
   prop('shrine', VC.x, VC.z, face(0, 1), 0.9); prop('greatTree', VC.x + 28, VC.z + 22, 0, 0.7);
@@ -427,7 +477,12 @@ function yukigami(): void {
   for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU, r = 85 + Math.sin(a * 3) * 14; loop.push([SV.x + Math.cos(a) * r, SV.z + Math.sin(a) * r]); }
   const vloop = stoneAt(loop, 6, 'snow', true);
   const rng = mulberry32(808);
-  along(vloop, 30, 14, 0, 1, (x, z, nx, nz) => { if (land(x, z, 3) && slopeAt(x, z) < 0.3) prop('cabin' + Math.floor(rng() * 3), x, z, face(-nx, -nz), 1); });
+  along(vloop, 14, 13, 0, 1, (x, z, nx, nz) => {
+    for (let row = 0; row < 3; row++) {
+      const bx = x + nx * row * 15, bz = z + nz * row * 15;
+      if (land(bx, bz, 3) && slopeAt(bx, bz) < 0.32 && NET.edgeDist(bx, bz, 12) > 5.5 && claim(bx, bz, 5.8)) prop('cabin' + Math.floor(rng() * 3), bx, bz, face(-nx, -nz), 0.95);
+    }
+  });
   prop('pagodaIce', SV.x + 8, SV.z - 8, 0.3, 1.1);
   // switch-backing pilgrim trail up the great peak, ending at a summit shrine
   const P = { x: SNOW_PEAK0[0], z: SNOW_PEAK0[1] };
@@ -603,10 +658,9 @@ function hamlet(cx: number, cz: number, isl: string, link: { x: number; z: numbe
   }
   claim(cx, cz, 8);
   prop('shrine', cx, cz, rng() * TAU, 0.7);
-  const nh = 5 + Math.floor(rng() * 4);
-  for (let i = 0; i < nh; i++) {
-    const a = (i / nh) * TAU + rng() * 0.4, r = 26 + rng() * 14, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    if (!flat(x, z, 7) || !claim(x, z, 7)) continue;
+  for (let i = 0; i < 26; i++) {                                           // two rings of houses, tightly packed
+    const ringR = i < 12 ? 22 : 36, a = (i / (i < 12 ? 12 : 14)) * TAU + rng() * 0.25, r = ringR + rng() * 5, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    if (!flat(x, z, 6) || NET.edgeDist(x, z, 10) < 4.5 || !claim(x, z, 5.6)) continue;
     prop((snow ? 'cabin' : 'house') + Math.floor(rng() * 3), x, z, face(cx - x, cz - z), 0.9 + rng() * 0.2);
   }
   for (let i = 0; i < 2; i++) { const a = rng() * TAU, x = cx + Math.cos(a) * 12, z = cz + Math.sin(a) * 12; if (flat(x, z, 3) && claim(x, z, 3.5)) prop('stall' + Math.floor(rng() * 4), x, z, face(cx - x, cz - z), 1); }
@@ -753,8 +807,9 @@ export function buildLayout(): void {
   skyRoads();
   airport();
   buildCityLots();
-  cityFurniture();
   seaport();
+  cityRows();
+  cityFurniture();
   godIsland(); sakuraValley(); yukigami(); islets(); countryside();
   // volcano: torii processional climbing the south face toward the crater, and a forge shrine at its foot
   for (let i = 0; i < 8; i++) {
