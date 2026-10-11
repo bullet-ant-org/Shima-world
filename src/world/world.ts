@@ -4,7 +4,7 @@ import { Assets } from '../rendering/assets';
 import { InstancePools, type InstancePool, type PoolEntry } from '../rendering/instancing';
 import type { OutlineSpec } from '../rendering/outline';
 import {
-  benchGeo, barnGeo, isSignature, hasCustomModel, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
+  benchGeo, barnGeo, isSignature, hasCustomModel, signPostGeo, bollardGeo, newsBoxGeo, bikeRackGeo, busStopGeo, hydrantGeo, planterGeo, streetTreeGeo, trashbagGeo, trashcanGeo, vendingGeo, fenceGeo, fieldGeo, haystackGeo, scarecrowGeo, stallGeo, buildingGeo, hasBuildingDetail, greatTreeGeo, hex, houseGeo, komainuGeo, lampGeo, pagodaGeo, sanmonGeo, shrineGeo, templeGeo, toriiGeo, toroGeo, trafficLightGeo,
   archGeo, terminalGeo, airTowerGeo, hangarGeo, planeGeo, type Pair,
 } from '../rendering/geo';
 import { BUILDINGS, NET, PROPS, buildLayout, buildingsNear, covered, blocked, inCourseArea, inPort, setCollisionShapes, type Building } from './layout';
@@ -592,11 +592,20 @@ export class World {
     const F = (this.furn ??= {
       tree0: streetTreeGeo(0), tree1: streetTreeGeo(1), tree2: streetTreeGeo(2), can: trashcanGeo(), bags: trashbagGeo(),
       vend0: vendingGeo(0), vend1: vendingGeo(1), vend2: vendingGeo(2), hyd: hydrantGeo(), plant: planterGeo(), bus: busStopGeo(),
+      sign: signPostGeo(), boll: bollardGeo(), news: newsBoxGeo(), bike: bikeRackGeo(),
     });
     const B: Record<string, Batch> = {};
     const add = (k: string, x: number, z: number, ry: number) => { (B[k] ??= new Batch()).add(x, heightAt(x, z) + 0.32, z, ry, 1, 1, 1); };
     for (const sg of NET.segsIn(cx, cz)) {
       const p = sg.path, i = sg.i;
+      // street corners: a sign post and bollards where the sidewalk meets a junction
+      if ((p.kind === 'avenue' || p.kind === 'street') && p.junc && !p.junc[i] && p.junc[i + 1]) {
+        const x = p.x[i], z = p.z[i], nx = -p.tz[i], nz = p.tx[i], hw = p.width / 2;
+        for (const sd of [-1, 1]) {
+          add('sign', x + nx * (hw + 0.7) * sd + p.tx[i] * 3, z + nz * (hw + 0.7) * sd + p.tz[i] * 3, Math.atan2(-nx * sd, -nz * sd));
+          for (let k = 0; k < 3; k++) add('boll', x + nx * (hw + 0.45) * sd + p.tx[i] * (k * 1.4), z + nz * (hw + 0.45) * sd + p.tz[i] * (k * 1.4), 0);
+        }
+      }
       if ((p.kind !== 'avenue' && p.kind !== 'street') || (p.junc && (p.junc[i] || p.junc[i + 1]))) continue;
       const x = p.x[i], z = p.z[i], nx = -p.tz[i], nz = p.tx[i], hw = p.width / 2, side = (i >> 1) & 1 ? 1 : -1;
       const sx = (off: number, s2 = side) => x + nx * (hw + off) * s2, sz = (off: number, s2 = side) => z + nz * (hw + off) * s2;
@@ -609,6 +618,8 @@ export class World {
       else if (r < 0.39) add('hyd', sx(0.8), sz(0.8), 0);
       else if (r < 0.47) add('plant', sx(2.4), sz(2.4), faceRoad() + Math.PI / 2);
       else if (r < 0.5 && p.kind === 'avenue') add('bus', sx(2.6), sz(2.6), faceRoad() + Math.PI);
+      else if (r < 0.56) add('news', sx(3.7), sz(3.7), faceRoad());
+      else if (r < 0.61) add('bike', sx(3.4), sz(3.4), faceRoad() + Math.PI / 2);
     }
     // pocket parks on open paved ground between the blocks: tree clusters, planters, benches, vending machines
     const ox = cx * CHUNK, oz = cz * CHUNK;

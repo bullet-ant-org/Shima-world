@@ -215,6 +215,45 @@ function addWindows(lit: MB, lights: MB, poly: number[][], y0: number, fl: numbe
   }
 }
 
+/** architecture beyond windows: base course, cornices, corner pilasters, drainpipes, wall AC units, fire escapes */
+function addFacadeExtras(lit: MB, poly: number[][], y0: number, fl: number, pal: (typeof PALETTES)[number], r: () => number, residential: boolean): void {
+  const n = poly.length, trim = shade(hex(pal.trim), 0.92), wall = hex(pal.wall), dark = hex(0x3b404c), metal = hex(0x5a606c);
+  let cx = 0, cz = 0; for (const p of poly) { cx += p[0]; cz += p[1]; } cx /= n; cz /= n;
+  const top = y0 + fl * FH;
+  let escape = residential && fl >= 3 && fl <= 10 ? Math.floor(r() * n) : -1;
+  for (let e = 0; e < n; e++) {
+    const a = poly[e], b = poly[(e + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L < 4) { if (e === escape) escape = (escape + 1) % n; continue; }
+    const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+    let nx = uz, nz = -ux; if (nx * (a[0] - cx) + nz * (a[1] - cz) < 0) { nx = -nx; nz = -nz; }
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+    if (y0 === 0) lit.obox(mx + nx * 0.12, 0.6, mz + nz * 0.12, ux, uz, nx, nz, L + 0.2, 1.2, 0.3, shade(wall, 0.62), 1 | 16);        // base course
+    for (let f = 4; f < fl; f += 4) lit.obox(mx + nx * 0.22, y0 + f * FH, mz + nz * 0.22, ux, uz, nx, nz, L + 0.5, 0.35, 0.5, trim, 1 | 16 | 32 | 4 | 8); // string courses
+    lit.obox(mx + nx * 0.3, top - 0.25, mz + nz * 0.3, ux, uz, nx, nz, L + 0.7, 0.55, 0.7, trim, 1 | 16 | 32 | 4 | 8);                  // cornice
+    lit.obox(a[0] + nx * 0.15 + ux * 0.35, (y0 + top) / 2, a[1] + nz * 0.15 + uz * 0.35, ux, uz, nx, nz, 0.7, top - y0, 0.4, shade(wall, 0.9), 1 | 4 | 8); // corner pilaster
+    if (r() < 0.6) lit.obox(b[0] + nx * 0.25 - ux * 1.0, (y0 + top) / 2, b[1] + nz * 0.25 - uz * 1.0, ux, uz, nx, nz, 0.16, top - y0, 0.16, metal, 1 | 4 | 8); // drainpipe
+    // AC units hanging under some windows
+    if (residential || fl < 14) for (let f = 1; f < Math.min(fl, 12); f++) for (let t = 2.4; t < L - 2; t += 4.7) if (r() < 0.12) {
+      const px = a[0] + ux * t, pz = a[1] + uz * t, yy = y0 + f * FH + 0.45;
+      lit.obox(px + nx * 0.42, yy, pz + nz * 0.42, ux, uz, nx, nz, 0.9, 0.6, 0.5, hex(0xc8ccd2), 1 | 4 | 8 | 16);
+      lit.obox(px + nx * 0.68, yy, pz + nz * 0.68, ux, uz, nx, nz, 0.5, 0.42, 0.02, dark, 1);
+    }
+    // a fire escape zig-zagging down one side wall
+    if (e === escape && L > 9) {
+      const t0 = L * 0.5;
+      for (let f = 1; f < fl; f++) {
+        const px = a[0] + ux * t0, pz = a[1] + uz * t0, yy = y0 + f * FH;
+        lit.obox(px + nx * 0.8, yy, pz + nz * 0.8, ux, uz, nx, nz, 4.2, 0.08, 1.4, dark, 63);
+        lit.obox(px + nx * 1.48, yy + 0.5, pz + nz * 1.48, ux, uz, nx, nz, 4.2, 0.06, 0.05, dark, 63);
+        lit.obox(px + nx * 1.48, yy + 0.95, pz + nz * 1.48, ux, uz, nx, nz, 4.2, 0.06, 0.05, dark, 63);
+        const dir = f % 2 ? 1 : -1;
+        lit.quad([px + ux * dir * 1.8 + nx * 0.3, yy, pz + uz * dir * 1.8 + nz * 0.3], [px + ux * dir * 1.8 + nx * 1.3, yy, pz + uz * dir * 1.8 + nz * 1.3],
+          [px - ux * dir * 1.2 + nx * 1.3, yy - FH, pz - uz * dir * 1.2 + nz * 1.3], [px - ux * dir * 1.2 + nx * 0.3, yy - FH, pz - uz * dir * 1.2 + nz * 0.3], metal);
+      }
+    }
+  }
+}
+
 function addRoof(lit: MB, lights: MB, p: Prism, topY: number, pal: (typeof PALETTES)[number], r: () => number, kind: number, height: number): void {
   let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
   for (const q of p.poly) { minx = Math.min(minx, q[0]); maxx = Math.max(maxx, q[0]); minz = Math.min(minz, q[1]); maxz = Math.max(maxz, q[1]); }
@@ -290,6 +329,17 @@ const officeBuilder: Custom = (s, lit, lights, r) => {
   const neon = NEON[Math.floor(r() * NEON.length)];
   for (const [nx, nz, ux, uz] of [[0, 1, 1, 0], [0, -1, 1, 0], [1, 0, 0, 1], [-1, 0, 0, 1]]) lights.obox(nx * (w / 2 + 0.22), y1 - 1.4, nz * (d / 2 + 0.22), ux, uz, nx, nz, ux ? w : d, 0.5, 0.1, neon);
   if (r() < 0.6) lit.box(w * 0.2, y1 + 1.5, d * 0.1, 5, 3, 4, hex(0x7d838f));
+  // entrance: canopy, revolving door, steps, flagpoles
+  lit.box(0, lobby * FH - 0.6, d / 2 + 3.2, w * 0.42, 0.35, 4.6, frame); for (const x of [-w * 0.18, w * 0.18]) lit.box(x, (lobby * FH - 0.6) / 2, d / 2 + 5.2, 0.25, lobby * FH - 0.6, 0.25, frame);
+  lit.cyl(0, d / 2 + 1.6, 1.4, 1.4, 0, 3.2, 12, shade(glass, 1.25)); lit.cyl(0, d / 2 + 1.6, 1.5, 1.5, 3.2, 3.5, 12, frame);
+  for (let k = 0; k < 3; k++) lit.box(0, 0.12 + k * 0.12, d / 2 + 6 + k * -0.5, w * 0.5, 0.12, 1.2, shade(base, 0.9));
+  for (const x of [-w * 0.32, -w * 0.26, w * 0.26]) { lit.cyl(x, d / 2 + 6.5, 0.08, 0.06, 0, 9, 6, hex(0xd8dde6)); lit.box(x + 0.7, 8.4, d / 2 + 6.5, 1.3, 0.8, 0.03, hex([0xc8283c, 0x2a6ad8, 0xf2c83a][Math.floor(r() * 3)])); }
+  // maintenance ledges every ten floors and corner fins
+  for (let f = 10; f < fl - 2; f += 10) lit.box(0, f * FH, 0, w + 1.4, 0.4, d + 1.4, frame);
+  for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) lit.box(x * (w / 2 + 0.25), (y1 + lobby * FH) / 2, z * (d / 2 + 0.25), 0.7, y1 - lobby * FH, 0.7, shade(frame, 0.92));
+  // window-cleaning gondola on its roof crane
+  lit.box(w * 0.3, y1 + 7.6, 0, 0.6, 1.2, 0.6, hex(0x8a8e96)); lit.box(w * 0.3, y1 + 8.3, d * 0.25, 0.4, 0.4, d * 0.5 + 2, hex(0xf2c83a));
+  lit.box(w * 0.3, y1 - 6, d / 2 + 1.2, 3.2, 1, 0.8, hex(0xf2c83a)); lit.box(w * 0.3, y1 + 1, d / 2 + 1.2, 0.05, 14, 0.05, hex(0x2a2c34));
 };
 
 /** Neo-classical bank: columned portico, pediment, steps, bronze doors, gold lettering, rooftop dome. */
@@ -615,7 +665,7 @@ export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.B
     const col = mixc(wall, hex(0xffffff), 0.04 * (p.y0 > 0 ? 1 : 0));
     // detailed buildings: darker plinth band; far buildings: texture handles windows (UV tile = 8 windows x 8 floors)
     lit.prism(p.poly, p.y0, y1, col, shade(wall, 0.7), detail ? undefined : [33, 28.8]);
-    if (detail) addWindows(lit, lights, p.poly, p.y0, p.fl, pal, r, residential, spec.shop && p.y0 === 0);
+    if (detail) { addWindows(lit, lights, p.poly, p.y0, p.fl, pal, r, residential, spec.shop && p.y0 === 0); addFacadeExtras(lit, p.poly, p.y0, p.fl, pal, r, residential); }
     if (y1 > topY) { topY = y1; topPrism = p; }
   });
   if (detail) {
@@ -1080,4 +1130,22 @@ export function busStopGeo(): Pair {
   m.box(0, 0.48, -0.25, 3, 0.08, 0.45, hex(0x8a6a4a)); for (const x of [-1.2, 1.2]) m.box(x, 0.24, -0.25, 0.08, 0.48, 0.4, F);
   m.box(1.6, 1.3, -0.48, 0.7, 1.6, 0.06, F); l.box(1.6, 1.3, -0.44, 0.6, 1.5, 0.02, hex(0xf4e8ff), 1); // ad panel
   return done(m, l);
+}
+
+/** street name sign with a one-way arrow and a pedestrian sign, on a grey pole */
+export function signPostGeo(): Pair {
+  const m = new MB(), l = new MB(), pole = hex(0x6a707c);
+  m.cyl(0, 0, 0.06, 0.05, 0, 3.4, 6, pole);
+  m.box(0.55, 3.2, 0, 1.1, 0.26, 0.04, hex(0x2f8a4a)); m.box(0.55, 3.2, 0.025, 0.95, 0.06, 0.01, hex(0xf4f4f0), 1);
+  m.box(0, 2.6, 0.04, 0.5, 0.5, 0.03, hex(0x2a6ad8)); m.box(0, 2.6, 0.06, 0.3, 0.08, 0.01, hex(0xf4f4f0), 1);
+  m.box(0, 2.0, 0.04, 0.42, 0.42, 0.03, hex(0xe8392f));
+  return done(m, l);
+}
+export function bollardGeo(): Pair { const m = new MB(); m.cyl(0, 0, 0.12, 0.11, 0, 0.9, 8, hex(0x3a3e48)); m.cyl(0, 0, 0.125, 0.125, 0.7, 0.78, 8, hex(0xf2c83a)); return done(m, new MB()); }
+export function newsBoxGeo(): Pair { const m = new MB(); m.box(0, 0.5, 0, 0.5, 1.0, 0.45, hex([0x2a6ad8, 0xc8283c, 0x2f9a5a][0])); m.box(0, 0.75, 0.23, 0.4, 0.3, 0.02, hex(0xd8dce0), 1); m.box(0, 0.5, 0, 0.55, 0.06, 0.5, hex(0x1a1c24)); return done(m, new MB()); }
+export function bikeRackGeo(): Pair {
+  const m = new MB(), c = hex(0x8a8e96);
+  for (let k = -1; k <= 1; k++) { m.box(k * 0.7, 0.45, -0.3, 0.05, 0.9, 0.05, c); m.box(k * 0.7, 0.45, 0.3, 0.05, 0.9, 0.05, c); m.box(k * 0.7, 0.88, 0, 0.05, 0.05, 0.65, c); }
+  m.box(-0.35, 0.45, 0, 0.06, 0.6, 1.5, hex(0xc8283c)); m.cyl(-0.35, 0.65, 0.34, 0.34, 0.1, 0.13, 10, hex(0x1a1a1e));       // a parked bicycle
+  return done(m, new MB());
 }

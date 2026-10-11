@@ -330,6 +330,17 @@ export class PathNet {
     flat(-hw, hw, 0.12, asphalt, 1);
     flat(hw, hw + sw, 0.32, walk, 3); flat(-hw - sw, -hw, 0.32, walk, 3);
     curb(1, [0.5, 0.5, 0.5]); curb(-1, [0.5, 0.5, 0.5]);
+    // paving: grout lines between the sidewalk slabs, a darker kerb-side gutter, tactile strip
+    const grout = [walk[0] * 0.78, walk[1] * 0.78, walk[2] * 0.78], gutter = [0.3, 0.3, 0.32];
+    for (const sd of [1, -1]) {
+      for (const u of [1.4, 2.8]) flat(sd * (hw + u) - 0.03, sd * (hw + u) + 0.03, 0.325, grout, 3);
+      for (const t of [0, 0.34, 0.67]) flat(sd > 0 ? hw : -hw - sw, sd > 0 ? hw + sw : -hw, 0.325, grout, 3, t, t + 0.015);
+      flat(sd > 0 ? hw - 0.35 : -hw, sd > 0 ? hw : -hw + 0.35, 0.125, gutter, 1);
+    }
+    // street furniture painted into the road: manholes and kerb drains every few slabs
+    const hsh = hash2(i * 7 + p.id * 131, p.id);
+    if (hsh < 0.22) { const u = (hsh * 9 % 1 - 0.5) * hw; flat(u - 0.45, u + 0.45, 0.13, [0.16, 0.16, 0.18], 1, 0.42, 0.58); flat(u - 0.32, u + 0.32, 0.135, [0.28, 0.28, 0.3], 1, 0.45, 0.55); }
+    if (hsh > 0.7) for (const sd of [1, -1]) flat(sd > 0 ? hw - 0.32 : -hw + 0.02, sd > 0 ? hw - 0.02 : -hw + 0.32, 0.13, [0.1, 0.1, 0.11], 1, 0.4, 0.6);
     flat(hw - 0.55, hw - 0.35, 0.13, white, 1); flat(-hw + 0.35, -hw + 0.55, 0.13, white, 1);       // edge lines
     if (p.kind === 'avenue') {
       flat(-0.32, -0.14, 0.13, yellow, 1); flat(0.14, 0.32, 0.13, yellow, 1);                         // double centre line

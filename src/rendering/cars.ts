@@ -183,6 +183,12 @@ function buildRaw(model: CarModel): { lit: Raw; lights: Raw } {
     pushBox(lights, 0, front.top * 0.38, front.z + 0.02, 0.46, 0.12, 0.03, [0.86, 0.86, 0.82]);                     // number plates
     pushBox(lights, 0, rear.top * 0.5, rear.z - 0.02, 0.46, 0.12, 0.03, [0.86, 0.86, 0.82]);
     pushBox(lit, rear.w * 0.5, y0 + 0.04, rear.z - 0.05, 0.08, 0.08, 0.22, [0.6, 0.6, 0.62]);                      // exhaust
+    // cyber styling: neon underglow, full-width LED light bars front and rear, glowing side accent lines
+    const glowC = ([[0.25, 0.95, 1], [1, 0.3, 0.85], [0.55, 1, 0.45], [1, 0.75, 0.2]] as number[][])[(model.length * 7 + model.charCodeAt(0)) % 4];
+    for (const x of [-1, 1]) pushBox(lights, x * (mid.w * 0.82), y0 - 0.06, 0, 0.06, 0.03, (front.z - rear.z) * 0.6, glowC);
+    pushBox(lights, 0, front.top * 0.78, front.z + 0.035, front.w * 1.5, 0.04, 0.03, [0.85, 0.95, 1]);
+    pushBox(lights, 0, rear.top * 0.88, rear.z - 0.035, rear.w * 1.6, 0.05, 0.03, [1, 0.1, 0.18]);
+    if (!big) for (const x of [-1, 1]) pushBox(lights, x * (mid.w + 0.01), mid.belt - 0.18, (front.z + rear.z) / 2, 0.02, 0.025, (front.z - rear.z) * 0.7, glowC);
     if (model === 'sport') { pushBox(lit, 0, rear.top + 0.28, rear.z + 0.18, rear.w * 1.8, 0.04, 0.3, PAINT); for (const x of [-0.6, 0.6]) pushBox(lit, x * rear.w, rear.top + 0.14, rear.z + 0.2, 0.05, 0.28, 0.08, TRIM); }
     if (model === 'van' || model === 'bus') for (const x of [-0.6, 0.6]) pushBox(lit, x * mid.w, mid.top + 0.06, 0, 0.05, 0.06, (front.z - rear.z) * 0.6, [0.7, 0.7, 0.74]); // roof rails
     if (model === 'bus') {
