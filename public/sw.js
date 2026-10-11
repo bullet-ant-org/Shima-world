@@ -29,7 +29,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('message', (e) => {
   if (e.data === 'skipWaiting') self.skipWaiting();
-  if (e.data === 'version') e.source && e.source.postMessage({ type: 'version', version: BUILD });
+  if (e.data === 'version') { const to = (e.ports && e.ports[0]) || e.source; to && to.postMessage({ type: 'version', version: BUILD }); }
 });
 
 self.addEventListener('fetch', (e) => {

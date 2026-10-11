@@ -21,11 +21,71 @@
     button { background: linear-gradient(90deg, #ff3d6e, #7a5cff); border: 0; color: #fff; font-size: 17px; padding: 12px 28px; border-radius: 8px; letter-spacing: .12em; cursor: pointer; }
     button.alt { background: #1b1f3a; border: 1px solid #3a4075; }
     .bar { width: min(420px, 80vw); height: 8px; background: #1b1f3a; border-radius: 4px; overflow: hidden; }
-    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #00e5ff, #7a5cff, #00e5ff); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; transition: width .35s ease-out; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #00e5ff, #7a5cff, #00e5ff); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
     @keyframes shimmer { from { background-position: 0 0; } to { background-position: -200% 0; } }
-    #loading { background: radial-gradient(ellipse at 50% 30%, #2a3a7a 0%, #10142e 60%, #070914 100%); }
-    #loading h1 { letter-spacing: .4em; text-shadow: 0 0 18px rgba(120,200,255,.6); }
-    #load-tip { opacity: .65; font-size: 12px; max-width: 520px; text-align: center; margin-top: 18px; min-height: 2.6em; }
+    /* ---- key art (home / loading / install) ---- */
+    .art { position: absolute; inset: -6%; overflow: hidden; z-index: 0; }
+    .art svg { width: 100%; height: 100%; display: block; animation: kenburns 46s ease-in-out infinite alternate; transform-origin: 62% 55%; }
+    @keyframes kenburns { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.12) translate(-2.5%, 1%); } }
+    .art .l-clouds { animation: drift 70s linear infinite alternate; }
+    .art .l-dragon { animation: dragon 38s linear infinite; }
+    .art .l-city { animation: drift2 46s ease-in-out infinite alternate; }
+    .art .fall { animation: fall 1.2s linear infinite; }
+    @keyframes drift { to { transform: translateX(-120px); } }
+    @keyframes drift2 { to { transform: translateX(-30px); } }
+    @keyframes dragon { from { transform: translate(-200px, 40px); } to { transform: translate(2100px, -60px); } }
+    @keyframes fall { 50% { opacity: .75; } }
+    .shade { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo .kanji { font: 900 clamp(46px, 11vh, 86px)/1 'Hiragino Mincho ProN', 'Yu Mincho', serif; color: #ff2d55; text-shadow: 3px 3px 0 #000, 0 0 30px rgba(255,45,85,.45); }
+    .logo .word { display: flex; flex-direction: column; line-height: .86; }
+    .logo .word b { font: italic 900 clamp(30px, 7.5vh, 58px)/.9 'Arial Black', Impact, system-ui, sans-serif; color: #fff; letter-spacing: .01em; -webkit-text-stroke: 2px #000; text-shadow: 4px 4px 0 #000; }
+    .logo .word b + b { color: #ffd23f; }
+
+    /* ---- home screen ---- */
+    #menu.show, #loading.show { display: block; }
+    #menu { padding: 0; background: #05060d; text-align: left; }
+    #menu .shade { background: linear-gradient(90deg, rgba(4,5,12,.88) 0%, rgba(4,5,12,.55) 34%, rgba(4,5,12,0) 58%), linear-gradient(0deg, rgba(4,5,12,.85) 0%, rgba(4,5,12,0) 22%); }
+    #menu-hero { position: absolute; left: auto; right: 0; top: 0; bottom: auto; width: 52%; height: 100%; z-index: 2; }
+    #menu .logo { position: absolute; left: max(28px, env(safe-area-inset-left)); top: max(18px, env(safe-area-inset-top)); z-index: 3; }
+    #menu-list { position: absolute; left: max(28px, env(safe-area-inset-left)); top: 50%; transform: translateY(-38%); display: flex; flex-direction: column; gap: 4px; z-index: 3; width: min(340px, 42vw); }
+    #menu .mi { display: flex; justify-content: space-between; align-items: baseline; width: 100%; text-align: left; background: rgba(0,0,0,.35); border: 0; border-left: 4px solid transparent; border-radius: 0; color: #fff; padding: 9px 14px; font: italic 800 clamp(15px, 3.6vh, 21px)/1 'Arial Black', Impact, system-ui, sans-serif; letter-spacing: .03em; text-shadow: 2px 2px 0 rgba(0,0,0,.6); }
+    #menu .mi small { font: 600 10px/1 system-ui; letter-spacing: .12em; opacity: .6; font-style: normal; text-shadow: none; }
+    #menu .mi:hover, #menu .mi:focus-visible, #menu .mi.sel { background: #fff; color: #08090f; border-left-color: #ff2d55; text-shadow: none; outline: none; }
+    #menu .mi.primary { background: linear-gradient(90deg, #ff2d55, rgba(255,45,85,.25)); }
+    #menu .mi.primary:hover { background: #fff; }
+    #menu-settings { position: absolute; left: calc(max(28px, env(safe-area-inset-left)) + min(340px, 42vw) + 12px); top: 50%; transform: translateY(-38%); width: min(300px, 34vw); background: rgba(0,0,0,.78); border-top: 3px solid #ff2d55; z-index: 3; display: none; }
+    #menu-settings.show { display: block; }
+    #menu-settings h3, #menu-upd h3 { margin: 0; padding: 9px 12px; font: 800 12px/1 system-ui; letter-spacing: .2em; color: #8fb8ff; background: #000; }
+    #menu-settings button { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid rgba(255,255,255,.06); border-radius: 0; padding: 11px 12px; font: 600 13px/1 system-ui; letter-spacing: .06em; }
+    #menu-settings button:hover { background: #fff; color: #000; }
+    #menu-upd { position: absolute; left: calc(max(28px, env(safe-area-inset-left)) + min(340px, 42vw) + 12px); top: 50%; transform: translateY(-38%); width: min(300px, 34vw); display: none; background: rgba(0,0,0,.72); border-top: 3px solid #26c26b; z-index: 3; backdrop-filter: blur(4px); }
+    #menu-upd.show { display: block; }
+    #menu-upd.ready { border-top-color: #ffd23f; box-shadow: 0 0 0 1px rgba(255,210,63,.4), 0 0 28px rgba(255,210,63,.25); }
+    #menu-upd .st { padding: 9px 12px 4px; font: 600 12px/1.35 system-ui; color: #dfe4ff; min-height: 1.4em; }
+    #menu-upd .bar { width: auto; margin: 4px 12px 8px; height: 5px; border-radius: 0; display: none; }
+    #menu-upd .row { display: flex; gap: 6px; padding: 0 12px 10px; }
+    #menu-upd button { flex: 1; padding: 9px 6px; font: 800 11px/1 system-ui; letter-spacing: .12em; border-radius: 2px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); }
+    #menu-upd #menu-update { display: none; background: linear-gradient(90deg, #ffb800, #ffd23f); color: #120c00; border: 0; }
+    #menu-upd.ready #menu-update { display: block; }
+    #menu-foot { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; justify-content: space-between; gap: 12px; padding: 9px max(18px, env(safe-area-inset-right)) max(9px, env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left)); background: rgba(0,0,0,.7); font: 600 11px/1.2 system-ui; letter-spacing: .06em; color: #aab2d8; }
+    #menu-foot b { color: #fff; }
+
+    /* ---- loading screen ---- */
+    #loading { padding: 0; background: #05060d; text-align: left; }
+    #loading .shade { background: linear-gradient(0deg, rgba(3,4,10,.95) 0%, rgba(3,4,10,.55) 26%, rgba(3,4,10,0) 48%), linear-gradient(180deg, rgba(3,4,10,.6) 0%, rgba(3,4,10,0) 20%); }
+    #loading .logo { position: absolute; left: max(28px, env(safe-area-inset-left)); top: max(18px, env(safe-area-inset-top)); z-index: 2; transform: scale(.72); transform-origin: left top; }
+    #loading .tipbox { position: absolute; left: max(28px, env(safe-area-inset-left)); bottom: 46px; z-index: 2; max-width: min(620px, 62vw); }
+    #loading .tipbox em { display: inline-block; font: 900 11px/1 system-ui; font-style: normal; letter-spacing: .3em; color: #120c00; background: #ffd23f; padding: 4px 8px; margin-bottom: 8px; }
+    #load-tip { margin: 0; max-width: none; opacity: 1; font: italic 700 clamp(14px, 3.4vh, 20px)/1.35 system-ui; color: #fff; text-shadow: 2px 2px 0 rgba(0,0,0,.7); min-height: 2.7em; }
+    #loading .spin { position: absolute; right: max(28px, env(safe-area-inset-right)); bottom: 42px; z-index: 2; display: flex; align-items: center; gap: 10px; font: italic 900 15px/1 'Arial Black', Impact, system-ui; letter-spacing: .08em; color: #fff; text-shadow: 2px 2px 0 #000; }
+    #loading .spin i { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(255,255,255,.2); border-top-color: #ffd23f; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #load-text { margin: 0; opacity: 1; font: 600 11px/1 system-ui; letter-spacing: .08em; font-style: normal; color: #aab2d8; text-shadow: none; }
+    #loading .bar { position: absolute; left: 0; right: 0; bottom: 0; width: auto; height: 5px; border-radius: 0; z-index: 2; background: rgba(255,255,255,.08); }
+    #loading .bar > i { background: linear-gradient(90deg, #ff2d55, #ffd23f, #ff2d55); background-size: 200% 100%; }
+    #gate .art + .shade { background: rgba(4,5,12,.6); }
+    #gate > *:not(.art):not(.shade) { position: relative; z-index: 2; }
     #rotate { background: #05060d; z-index: 50; }
     @media (orientation: portrait) { #rotate { display: flex !important; } }
     #hud { position: fixed; left: 8px; top: 8px; font: 11px/1.4 monospace; color: #9fffe0; white-space: pre; z-index: 5; pointer-events: none; text-shadow: 0 0 3px #000; }
@@ -104,6 +164,7 @@
 
   <!-- Install gate: game will not run until installed as PWA -->
   <div id="gate" class="screen">
+    <div class="art" id="gate-art"></div><div class="shade"></div>
     <h1><b>島</b> SHIMA WORLD</h1>
     <p id="gate-msg">Download the game to your device to play. It installs once, then loads from local storage.</p>
     <div class="bar" id="dl-bar" style="display:none"><i id="dl-fill"></i></div>
@@ -113,13 +174,19 @@
   </div>
 
   <div id="menu" class="screen">
-    <h1><b>島</b> SHIMA WORLD</h1>
-    <button id="play-btn">CONTINUE</button>
-    <button id="char-btn" class="alt">CHARACTER</button>
-    <button id="gfx-btn" class="alt">GRAPHICS: ADAPTIVE</button>
-    <button id="ink-btn" class="alt">OUTLINES: HERO</button>
-    <button id="upd-menu-btn" class="alt">CHECK FOR UPDATE</button>
-    <p id="menu-info"></p>
+    <div class="art" id="menu-art"></div><div class="shade"></div>
+    <canvas id="menu-hero"></canvas>
+    <div class="logo"><span class="kanji">島</span><div class="word"><b>SHIMA</b><b>WORLD</b></div></div>
+    <nav id="menu-list">
+      <button id="play-btn" class="mi primary">CONTINUE <small>OPEN WORLD</small></button>
+      <button id="char-btn" class="mi">CHARACTER <small>CREATOR</small></button>
+      <button id="set-btn" class="mi">SETTINGS <small>GRAPHICS</small></button>
+      <button id="upd-menu-btn" class="mi">UPDATES <small id="upd-tag">CHECK</small></button>
+    </nav>
+    <div id="menu-settings"><h3>SETTINGS</h3><button id="gfx-btn">GRAPHICS: ADAPTIVE</button><button id="ink-btn">OUTLINES: HERO</button></div>
+    <div id="menu-upd"><h3>GAME UPDATES</h3><p class="st" id="upd-status">Checking for updates…</p><div class="bar" id="upd-bar"><i id="upd-fill"></i></div>
+      <div class="row"><button id="upd-check">CHECK NOW</button><button id="menu-update">UPDATE NOW</button></div></div>
+    <div id="menu-foot"><span id="menu-info"></span><span id="menu-ver"></span></div>
   </div>
 
   <div id="builder" class="screen">
@@ -134,7 +201,13 @@
       <div id="cb-foot"><button id="cb-random">RANDOM</button><button id="cb-reset">RESET</button><button id="cb-done">SAVE &amp; EXIT</button></div>
     </div>
   </div>
-  <div id="loading" class="screen"><h1>SHIMA WORLD</h1><div class="bar"><i id="load-fill"></i></div><p id="load-text"></p><p id="load-tip"></p></div>
+  <div id="loading" class="screen">
+    <div class="art" id="load-art"></div><div class="shade"></div>
+    <div class="logo"><span class="kanji">島</span><div class="word"><b>SHIMA</b><b>WORLD</b></div></div>
+    <div class="tipbox"><em>TIP</em><p id="load-tip"></p></div>
+    <div class="spin"><i></i><div><div>LOADING</div><p id="load-text"></p></div></div>
+    <div class="bar"><i id="load-fill"></i></div>
+  </div>
 
   <div id="rotate" class="screen"><h1>ROTATE DEVICE</h1><p>Shima World plays in landscape only.</p></div>
 
