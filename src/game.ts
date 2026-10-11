@@ -85,8 +85,8 @@ export class Game {
   private rainNow = 0; private rainTarget = 0; private rainTimer = 40;
 
   gameTime = 17.2;            // hours, 0..24
-  private camYaw = 0; private camPitch = 0.28;
-  camDist = 3.4; // third-person distance (raised by dev tooling for overview shots)
+  private camYaw = 0; private camPitch = 0.14;
+  camDist = 2.35; // third-person distance (raised by dev tooling for overview shots)
   setCam(yaw: number, pitch: number): void { this.camYaw = yaw; this.camPitch = pitch; }
   private last = 0; private hudAcc = 0; private saveAcc = 0;
   private shadowsOn: boolean;
@@ -245,7 +245,7 @@ export class Game {
     if (!door?.roof) return;
     P.teleport(door.roof.x, door.roof.z);
     P.mode = 'fly'; P.grounded = false; P.landing = false; P.boost = false; P.y = door.roof.y + 1.6; P.vy = 0;
-    this.camPitch = 0.3; this.camSnap = true; this.fade();
+    this.camPitch = 0.14; this.camSnap = true; this.fade();
   }
 
   private exitRoom(): void {
@@ -262,7 +262,7 @@ export class Game {
     if (!isl) return;
     if (this.interiors.inside) { this.interiors.leave(this.npc); this.player.room = null; }
     this.player.teleport(isl.spawn.x, isl.spawn.z);
-    this.camYaw = 0; this.camPitch = 0.28;
+    this.camYaw = 0; this.camPitch = 0.14;
     this.camera.position.set(this.player.x, this.player.y + 6, this.player.z + 8);
     for (let i = 0; i < 40; i++) this.world.update(this.player.x, this.player.z, 0, 0, this.profile.q.viewRings, this.camera, 6);
   }
@@ -423,11 +423,11 @@ export class Game {
     const P = this.player;
     // GTA-style chase camera: close over the right shoulder on foot, pulled back for running / riding / flying
     const ride = P.mount ? 1 : 0, run = !P.flying && !ride ? Math.min(1, P.hspeed / 7.8) : 0;
-    let d = this.camDist + run * 0.9 + (P.flying ? (P.boost ? 6 : 3) : 0) + ride * (2.4 + Math.min(3, P.hspeed * 0.15));
+    let d = this.camDist + run * 0.55 + (P.flying ? (P.boost ? 4.2 : 1.9) : 0) + ride * (2.1 + Math.min(2.4, P.hspeed * 0.12));
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    const sh = (P.flying ? 0.35 : 0.62) * (1 - ride * 0.5);                       // shoulder offset to the right
+    const sh = (P.flying ? 0.45 : 0.72) * (1 - ride * 0.45);                       // shoulder offset to the right
     const rx = Math.cos(this.camYaw), rz = -Math.sin(this.camYaw);
-    const lookH = P.flying ? 1.1 : 1.55 + ride * 0.95;
+    const lookH = P.flying ? 1.0 : 1.3 + ride * 0.95;
     const fx = P.x + rx * sh, fz = P.z + rz * sh, fy = P.y + lookH;
     // pull in so walls / buildings never get between the camera and the character
     for (let i = 1; i <= 6; i++) {
@@ -436,13 +436,13 @@ export class Game {
       if (R ? Math.abs(cx - R.cx) > R.hw - 0.3 || Math.abs(cz - R.cz) > R.hd - 0.3 || cy > R.y + R.h - 0.25 : blockTop(cx, cz) > cy - 0.5) { d = Math.max(R ? 0.6 : 1.2, t - 0.6); break; }
     }
     this.camD += (d - this.camD) * (1 - Math.exp(-dt * (d < this.camD ? 12 : 4)));
-    const tx = fx + Math.sin(this.camYaw) * cp * this.camD, tz = fz + Math.cos(this.camYaw) * cp * this.camD, ty = fy + 0.25 + sp * this.camD;
+    const tx = fx + Math.sin(this.camYaw) * cp * this.camD, tz = fz + Math.cos(this.camYaw) * cp * this.camD, ty = fy + 0.22 + sp * this.camD;
     const k = this.camSnap ? 1 : 1 - Math.exp(-dt * (P.flying ? 9 : 14));
     if (this.camSnap) { this.camSnap = false; this.camD = d; }
     const c = this.camera.position;
     c.x += (tx - c.x) * k; c.z += (tz - c.z) * k; c.y += (Math.max(ty, heightAt(c.x, c.z) + 1.2) - c.y) * k;
     // speed sells the motion: widen the field of view while flying, a lot while boosting
-    const fovT = P.flying ? Math.min(100, 70 + P.speed3 * 0.4) : 62 + run * 8 + ride * Math.min(12, P.hspeed * 0.6);
+    const fovT = P.flying ? Math.min(98, 66 + P.speed3 * 0.4) : 54 + run * 7 + ride * Math.min(12, P.hspeed * 0.6);
     this.camera.fov += (fovT - this.camera.fov) * (1 - Math.exp(-dt * 3));
     this.camera.aspect = this.gr.aspect; this.camera.updateProjectionMatrix();
     this.camera.lookAt(fx, fy, fz);
