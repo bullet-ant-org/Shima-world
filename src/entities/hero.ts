@@ -769,45 +769,49 @@ export class Hero {
    * then roll to the toes; the run adds knee drive, a flight phase, a forward lean and pumping arms.
    */
   private poseGround(a: Float32Array, p: PoseIn, c: number): number {
-    const S = Hero.set, hs = p.hs;
-    this.wMove += (smooth(0.3, 1.8, hs) - this.wMove) * Math.min(1, p.dt * 10);
-    this.wRun += (smooth(4.6, 7.2, hs) - this.wRun) * Math.min(1, p.dt * 6);
+    const S = Hero.set, hs = p.hs, L = Hero.loop;
+    // weights: moving (0 idle .. 1), running (0 walk .. 1 run)
+    this.wMove += (smooth(0.25, 1.6, hs) - this.wMove) * Math.min(1, p.dt * 10);
+    this.wRun += (smooth(4.4, 6.8, hs) - this.wRun) * Math.min(1, p.dt * 5);
     const w = this.wMove, run = this.wRun, walk = 1 - run;
-    const stride = 1.7 + hs * 0.32;                       // metres per full cycle (two steps)
-    if (w > 0.02) this.phase += p.dt * (hs / stride);
+    // distance per full cycle (two steps): long brisk strides walking, bounding strides running
+    const stride = walk * (1.55 + hs * 0.22) + run * (2.2 + hs * 0.2);
+    if (w > 0.02) this.phase += p.dt * (hs / Math.max(0.5, stride));
     const u = this.phase - Math.floor(this.phase);
-    const K = Hero.cyc;
-    // per-leg channels: thigh (- forward), knee (+ bend), foot pitch relative to the ground (+ toes down)
-    const WT = [[0, -0.42], [0.12, -0.3], [0.3, 0.02], [0.55, 0.38], [0.68, 0.1], [0.85, -0.38], [1, -0.42]];
-    const WK = [[0, 0.06], [0.12, 0.26], [0.32, 0.08], [0.55, 0.38], [0.72, 1.05], [0.9, 0.22], [1, 0.06]];
-    const WF = [[0, -0.22], [0.1, 0], [0.42, 0], [0.58, 0.55], [0.72, 0.15], [0.92, -0.1], [1, -0.22]];
-    const RT = [[0, -0.55], [0.14, -0.15], [0.33, 0.55], [0.48, 0.42], [0.66, -0.55], [0.82, -0.95], [1, -0.55]];
-    const RK = [[0, 0.32], [0.14, 0.55], [0.33, 0.28], [0.48, 1.25], [0.64, 2.0], [0.82, 1.25], [1, 0.32]];
-    const RF = [[0, -0.05], [0.12, 0.05], [0.3, 0.45], [0.42, 0.75], [0.62, 0.45], [0.85, 0.05], [1, -0.05]];
+    // ---- walk: heel strike, loading, mid-stance, push-off, swing (sign: thigh - forward, knee + bend, foot + toes down)
+    const WT = [[0, -0.38], [0.12, -0.3], [0.3, -0.05], [0.5, 0.2], [0.6, 0.16], [0.72, -0.12], [0.86, -0.42]];
+    const WK = [[0, 0.06], [0.1, 0.28], [0.28, 0.1], [0.5, 0.2], [0.64, 0.95], [0.76, 0.82], [0.9, 0.18]];
+    const WF = [[0, -0.25], [0.08, -0.02], [0.4, 0.02], [0.58, 0.45], [0.7, 0.2], [0.85, -0.05]];
+    // ---- run: contact, absorb, drive-off, flight with a tight heel tuck, high knee, reach
+    const RT = [[0, -0.5], [0.12, -0.12], [0.3, 0.42], [0.42, 0.3], [0.58, -0.45], [0.72, -0.98], [0.88, -0.78]];
+    const RK = [[0, 0.32], [0.1, 0.62], [0.28, 0.22], [0.42, 1.25], [0.56, 2.15], [0.72, 1.6], [0.88, 0.55]];
+    const RF = [[0, 0.02], [0.1, 0.06], [0.28, 0.62], [0.45, 0.85], [0.65, 0.25], [0.85, -0.12]];
     const leg = (uu: number) => {
-      const t = walk * K(WT, uu) + run * K(RT, uu), k = walk * K(WK, uu) + run * K(RK, uu), f = walk * K(WF, uu) + run * K(RF, uu);
-      return { t: t * w, k: k * w + 0.03, a: -(t * w + k * w) + f * w };
+      const t = walk * L(WT, uu) + run * L(RT, uu), k = walk * L(WK, uu) + run * L(RK, uu), f = walk * L(WF, uu) + run * L(RF, uu);
+      return { t: t * w, k: k * w + 0.04, a: -(t * w + k * w) + f * w };
     };
-    const L = leg(u), R = leg((u + 0.5) % 1);
-    S(a, THL, L.t, 0, -0.03 * w); S(a, KNL, L.k, 0, 0); S(a, ANL, L.a, 0, 0);
-    S(a, THR, R.t, 0, 0.03 * w); S(a, KNR, R.k, 0, 0); S(a, ANR, R.a, 0, 0);
-    // pelvis: walk rises at mid-stance; run compresses at mid-stance and floats in the flight phase
-    const ph2 = u * 4 * PI;
-    const bob = w * (walk * 0.028 * -Math.cos(ph2) + run * (-0.055 * Math.cos(ph2 - 0.25 * 4 * PI * 0.17) - 0.04));
-    const twist = w * (0.13 + 0.07 * run) * Math.sin(u * 2 * PI), roll = w * (0.05 * walk + 0.03 * run) * Math.sin(u * 2 * PI + PI / 2);
-    const lean = w * (0.06 + 0.3 * run);
-    const idle = 1 - w, breathe = Math.sin(c * 1.6);
-    S(a, H, 0.0, twist, roll + idle * 0.02 * Math.sin(c * 0.5));
-    S(a, SP, lean * 0.7 + idle * 0.015 * breathe, -twist * 1.4, -roll * 0.8);
-    S(a, HD, -lean * 0.6 - idle * 0.01 * breathe, -twist * 0.4 + idle * 0.06 * Math.sin(c * 0.45), 0);
-    // arms counter the opposite leg; walk: loose and nearly straight, run: elbows ~90 deg pumping across the body
-    const armL = R.t, armR = L.t;
-    const sw = walk * 0.85 + run * 1.15;
-    const elW = (x: number) => -0.22 - 0.3 * Math.max(0, -x), elRun = (x: number) => -1.35 - 0.45 * Math.max(0, -x) + 0.25 * Math.max(0, x);
-    S(a, SHL, armL * sw - idle * 0.02 * breathe, run * 0.15 * w, -0.08 - 0.05 * run - idle * 0.04);
-    S(a, ELL, (walk * elW(armL) + run * elRun(armL)) * w - idle * 0.15, 0, 0);
-    S(a, SHR, armR * sw - idle * 0.02 * breathe, -run * 0.15 * w, 0.08 + 0.05 * run + idle * 0.04);
-    S(a, ELR, (walk * elW(armR) + run * elRun(armR)) * w - idle * 0.15, 0, 0);
+    const R = leg(u), Lf = leg((u + 0.5) % 1);                       // THL = character's right leg, THR = left
+    S(a, THL, R.t, 0, -0.025 - 0.02 * w); S(a, KNL, R.k, 0, 0); S(a, ANL, R.a, 0, 0);
+    S(a, THR, Lf.t, 0, 0.025 + 0.02 * w); S(a, KNR, Lf.k, 0, 0); S(a, ANR, Lf.a, 0, 0);
+    // pelvis: walk is highest at mid-stance, the run lowest at mid-stance and highest in flight
+    const two = u * 4 * PI;
+    const bob = w * (walk * -0.026 * Math.cos(two) + run * (0.05 * Math.cos(two - 1.9) - 0.035));
+    const yaw = w * (0.09 + 0.06 * run) * Math.sin(u * 2 * PI);       // pelvis turns with the forward leg
+    const roll = w * (0.045 * walk + 0.025 * run) * Math.sin(u * 2 * PI + PI / 2);
+    const lean = w * (0.04 * walk + 0.2 * run) + run * w * 0.02 * Math.cos(two);
+    const idle = 1 - w, br = Math.sin(c * 1.5);
+    S(a, H, lean * 0.45, yaw, roll + idle * 0.015 * Math.sin(c * 0.5));
+    S(a, SP, lean * 0.6 + idle * 0.02 * br, -yaw * 1.6, -roll * 0.7);               // shoulders counter-rotate
+    S(a, HD, -lean * 0.95 - idle * 0.015 * br, -yaw * 0.25 + idle * 0.07 * Math.sin(c * 0.4), -roll * 0.2);
+    // arms swing against the opposite leg: relaxed pendulum walking, bent pumping arms running
+    const swingR = -Lf.t, swingL = -R.t;                              // right arm with the left leg
+    const sw = walk * 0.75 + run * 1.0;
+    const elW = (x: number) => -0.18 - 0.38 * Math.max(0, -x);         // forearm lifts on the forward swing
+    const elRn = (x: number) => -1.45 - 0.3 * Math.max(0, -x) + 0.2 * Math.max(0, x);
+    S(a, SHL, swingR * sw * -1 + idle * 0.02 * br, -0.12 * run * w, -0.07 - 0.04 * run - idle * 0.03);
+    S(a, ELL, (walk * elW(-swingR * sw) + run * elRn(-swingR * sw)) * w - idle * 0.12, 0, 0);
+    S(a, SHR, swingL * sw * -1 - idle * 0.02 * br, 0.12 * run * w, 0.07 + 0.04 * run + idle * 0.03);
+    S(a, ELR, (walk * elW(-swingL * sw) + run * elRn(-swingL * sw)) * w - idle * 0.12, 0, 0);
     // weapon-specific running styles (blended in with the run)
     if (this.weapon && run * w > 0.01) {
       const k = run * w, J = (j: number, x: number, y: number, z: number) => { a[j * 3] += (x - a[j * 3]) * k; a[j * 3 + 1] += (y - a[j * 3 + 1]) * k; a[j * 3 + 2] += (z - a[j * 3 + 2]) * k; };
@@ -826,9 +830,21 @@ export class Hero {
     // secondary joints get their own motion targets (springs add the follow-through)
     const wag = 0.3 * Math.sin(c * 1.8), acc = clamp(-this.acc * 0.012, -0.4, 0.4), st = Math.sin(u * 2 * PI);
     S(a, S1, 0.16 + hs * 0.05 + acc, 0, 0.04 * Math.sin(c * 2.1)); S(a, S2, 0.08 + hs * 0.03 + acc * 0.7, 0, 0.08 * Math.sin(c * 2.7) * (0.4 + w));
-    S(a, T1, 0.2 + hs * 0.045 + acc + 0.05 * Math.cos(ph2) * w, 0, 0.06 * st * w + 0.03 * wag * (1 - w));
+    S(a, T1, 0.2 + hs * 0.045 + acc + 0.05 * Math.cos(two) * w, 0, 0.06 * st * w + 0.03 * wag * (1 - w));
     S(a, T2, 0.1 + hs * 0.03 + acc * 0.8, 0, 0.1 * Math.sin(u * 2 * PI + 1.2) * w);
     return HIP + bob;
+  }
+
+  /** periodic Catmull-Rom curve through [u, value] keys (u ascending in 0..1, wraps): smooth, no stops at the keys */
+  private static loop(k: number[][], u: number): number {
+    const n = k.length;
+    let i = n - 1; for (let j = 0; j < n; j++) if (k[j][0] <= u) i = j;
+    const at = (j: number) => { const q = ((j % n) + n) % n, wrap = Math.floor(j / n); return [k[q][0] + wrap, k[q][1]]; };
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    let uu = u; if (uu < p1[0]) uu += 1;
+    const t = (uu - p1[0]) / Math.max(1e-6, p2[0] - p1[0]), t2 = t * t, t3 = t2 * t;
+    const m1 = (p2[1] - p0[1]) / Math.max(1e-6, p2[0] - p0[0]) * (p2[0] - p1[0]), m2 = (p3[1] - p1[1]) / Math.max(1e-6, p3[0] - p1[0]) * (p2[0] - p1[0]);
+    return (2 * t3 - 3 * t2 + 1) * p1[1] + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * p2[1] + (t3 - t2) * m2;
   }
 
   /** periodic keyframe curve (keys sorted by u in 0..1, last = first), smooth cosine interpolation */
@@ -849,27 +865,31 @@ export class Hero {
     S(a, S1, 0.3 + (up ? 0 : 0.7), 0, 0); S(a, S2, 0.2 + (up ? 0 : 0.6), 0, 0); S(a, T1, 0.3 + (up ? 0 : 0.8), 0, 0); S(a, T2, 0.2 + (up ? 0 : 0.7), 0, 0);
   }
 
-  /** hover: relaxed Superman-style float (one knee raised, toes pointed, arms open and bent), with slow breathing sway. */
+  /** hover: upright and weightless, arms relaxed down and slightly back, legs hanging loose with a slow drift */
   private poseHover(a: Float32Array, c: number): void {
-    const S = Hero.set, f = Math.sin(c * 1.9) * 0.05, g = Math.sin(c * 1.9 + 1.3) * 0.06;
-    S(a, H, 0.1 + f * 0.6, Math.sin(c * 0.7) * 0.06, Math.sin(c * 1.3) * 0.035);
-    S(a, SP, 0.04 + f * 0.3, 0, 0); S(a, HD, -0.06 - f * 0.4, Math.sin(c * 0.6) * 0.1, 0);
-    S(a, THR, -1.0 + g, 0, 0.12); S(a, KNR, 1.35 - g, 0, 0); S(a, ANR, 0.55, 0, 0);
-    S(a, THL, 0.2 - f, 0, -0.06); S(a, KNL, 0.2, 0, 0); S(a, ANL, 0.85, 0, 0);
-    S(a, SHL, -0.18 + f, 0, -0.9 + g); S(a, ELL, -0.9 + g * 0.5, 0, 0); S(a, SHR, -0.18 - f, 0, 0.9 - g); S(a, ELR, -0.9 - g * 0.5, 0, 0);
+    const S = Hero.set, f = Math.sin(c * 1.6) * 0.04, g = Math.sin(c * 1.6 + 1.2) * 0.05;
+    S(a, H, 0.06 + f * 0.5, Math.sin(c * 0.6) * 0.05, Math.sin(c * 1.1) * 0.03);
+    S(a, SP, 0.02 + f * 0.3, 0, 0); S(a, HD, -0.05 - f * 0.4, Math.sin(c * 0.5) * 0.12, 0);
+    S(a, THL, -0.12 + g, 0, -0.05); S(a, KNL, 0.35 - g * 0.6, 0, 0); S(a, ANL, 0.7, 0, 0);
+    S(a, THR, 0.05 - g, 0, 0.05); S(a, KNR, 0.2 + g * 0.6, 0, 0); S(a, ANR, 0.75, 0, 0);
+    S(a, SHL, 0.32 + f, 0, -0.32 + g * 0.5); S(a, ELL, -0.12, 0, 0); S(a, SHR, 0.32 - f, 0, 0.32 - g * 0.5); S(a, ELR, -0.12, 0, 0);
     S(a, S1, 0.22 + Math.sin(c * 3) * 0.1, 0, Math.sin(c * 1.7) * 0.08); S(a, S2, 0.12 + Math.sin(c * 3 + 1) * 0.14, 0, Math.sin(c * 2.2) * 0.12);
     S(a, T1, 0.3 + Math.sin(c * 2.4) * 0.1, 0, Math.sin(c * 1.6) * 0.06); S(a, T2, 0.2 + Math.sin(c * 2.4 + 1) * 0.14, 0, Math.sin(c * 1.9) * 0.08);
   }
 
-  /** flying: body tilts into the direction of travel; one fist forward (both when boosting), legs trailing with pointed toes. */
+  /**
+   * flying: the body lies into the direction of travel, both arms stretched straight back and down along the sides,
+   * palms back, legs together with pointed toes; boosting pulls the arms in tight and the body becomes a dart.
+   */
   private poseFly(a: Float32Array, boost: boolean, tilt: number, bank: number, c: number): void {
-    const S = Hero.set, fl = Math.sin(c * 15) * (boost ? 0.16 : 0.07);
+    const S = Hero.set, fl = Math.sin(c * 15) * (boost ? 0.12 : 0.05), sway = Math.sin(c * 2.2) * 0.04;
     S(a, H, tilt, 0, bank);
-    S(a, SP, 0.06, 0, 0); S(a, HD, -tilt * 0.75, 0, -bank * 0.4);
-    S(a, THL, 0.08, 0, -0.04); S(a, KNL, 0.12, 0, 0); S(a, ANL, 0.9, 0, 0);
-    S(a, THR, boost ? 0.1 : 0.34, 0, 0.04); S(a, KNR, boost ? 0.12 : 0.5, 0, 0); S(a, ANR, 0.9, 0, 0);
-    if (boost) { S(a, SHL, -(PI - 0.22), 0, -0.1); S(a, SHR, -(PI - 0.22), 0, 0.1); S(a, ELL, -0.08, 0, 0); S(a, ELR, -0.08, 0, 0); }
-    else { S(a, SHR, -(PI - 0.3), 0, 0.14); S(a, ELR, -0.1, 0, 0); S(a, SHL, 0.35, 0, -0.18); S(a, ELL, -0.35, 0, 0); }
+    S(a, SP, 0.05, 0, -bank * 0.2); S(a, HD, -tilt * 0.85 - 0.1, 0, -bank * 0.35);    // head up, eyes forward
+    const back = boost ? -0.12 : -0.3, out = boost ? 0.1 : 0.24;   // along the sides toward the feet, a little below the body line
+    S(a, SHL, back + fl * 0.4, 0.15, -out - sway); S(a, ELL, -0.06, 0, 0);
+    S(a, SHR, back - fl * 0.4, -0.15, out + sway); S(a, ELR, -0.06, 0, 0);
+    S(a, THL, 0.1 + sway, 0, -0.035); S(a, KNL, boost ? 0.06 : 0.18 + sway, 0, 0); S(a, ANL, 0.95, 0, 0);
+    S(a, THR, 0.12 - sway, 0, 0.035); S(a, KNR, boost ? 0.06 : 0.3 - sway, 0, 0); S(a, ANR, 0.95, 0, 0);
     S(a, S1, 0.12 + fl, 0, 0); S(a, S2, fl * 1.6, 0, Math.sin(c * 11) * 0.1); S(a, T1, 0.12 + fl * 0.8, 0, 0); S(a, T2, fl, 0, Math.sin(c * 9) * 0.1);
   }
 
