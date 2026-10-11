@@ -234,10 +234,13 @@ export class World {
 
   private buildPillars(): void {
     const A = this.assets;
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.3;
-      const px = GOD.x + Math.cos(a) * 120, pz = GOD.z + Math.sin(a) * 120;
-      const H = 800 + ((i * 97) % 5) * 70;
+    // spread across the whole island, each on its own ground and leaning its own way, shooting up into the sky
+    const rnd = mulberry32(606);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.4 + (rnd() - 0.5) * 0.5;
+      let r = 330 + (i % 3) * 190 + rnd() * 80, px = 0, pz = 0;
+      for (; r > 120; r -= 25) { px = GOD.x + Math.cos(a) * r; pz = GOD.z + Math.sin(a) * r; if (heightAt(px, pz) > 6) break; }
+      const H = 700 + ((i * 97) % 5) * 110 + rnd() * 150;
       const seed = i * 1.7;
       const lod = new THREE.LOD();
       // LOD0: eroded 7-sided shaft + glow bands. LOD1/2: fewer facets. LOD3: 3-facet silhouette (far impostor).
@@ -255,7 +258,8 @@ export class World {
       lod.addLevel(new THREE.Mesh(this.pillarGeo(H, 30, 56, 5, 2, 0, seed), A.pillar), 2200);
       lod.addLevel(new THREE.Mesh(new THREE.CylinderGeometry(30, 56, H, 3, 1).translate(0, H / 2, 0), A.pillar), 4500);
       lod.position.set(px, Math.max(0, heightAt(px, pz)) - 6, pz);
-      lod.rotation.set(Math.sin(a) * -0.1, 0, Math.cos(a) * 0.1); // lean toward the heavens
+      const lean = 0.1 + rnd() * 0.32, dir = rnd() * Math.PI * 2;
+      lod.rotation.set(Math.sin(dir) * lean, rnd() * Math.PI, Math.cos(dir) * lean); // each leans its own way
       this.group.add(lod);
       this.pillars.push(lod);
     }
