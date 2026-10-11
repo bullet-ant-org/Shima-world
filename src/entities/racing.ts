@@ -55,6 +55,7 @@ export class Racecourse {
   }
 
   private buildTrack(c: Course, assets: Assets): void {
+    const shade = (c: V3, k: number): V3 => [c[0] * k, c[1] * k, c[2] * k];
     const m = new MB(), dirt = hex(0xa87a4e), dirt2 = hex(0x9a6e44), white = hex(0xf4f2ec), wood = hex(0x6b4630), roof = hex(0x2a6ad8), seat = hex(0xd8d4cc);
     const y = (x: number, z: number) => heightAt(x, z);
     const step = 2.5, n = Math.ceil(this.P / step);
@@ -75,24 +76,40 @@ export class Racecourse {
         m.quad(top(a, ya, 1.17), top(b, yb, 1.17), top(b, yb, 1.05), top(a, ya, 1.05), white);
       }
     }
-    // grandstand along the home straight (outside, +R side), tiers of seats under a blue roof, finish post opposite
-    const g0 = courseAt(c, c.L + Math.PI * c.R + c.L * 0.5, c.W / 2 + 9), gy = y(g0.x, g0.z);
-    const grp = new MB();
-    for (let t = 0; t < 6; t++) grp.box(0, 0.4 + t * 0.6, -t * 1.0, 46, 0.8 + t * 1.2, 1.0, t % 2 ? seat : hex(0xc8c4bc));
-    grp.box(0, 2.0, -6.2, 46, 4, 0.4, wood);
-    for (const x of [-22, -11, 0, 11, 22]) grp.box(x, 3.6, -5.6, 0.3, 7.2, 0.3, white), grp.box(x, 3.6, 0.6, 0.25, 7.2, 0.25, white);
-    grp.box(0, 7.3, -2.6, 48, 0.3, 8.4, roof);
-    for (let k = 0; k < 12; k++) grp.box(-22 + k * 4, 7.0, 1.6, 3.6, 0.5, 0.06, k % 2 ? white : roof, 1);  // valance
-    // bake the placement into the vertices (the shared props material expects world-space geometry)
-    const sg = grp.toGeometry(); sg.applyMatrix4(new THREE.Matrix4().makeRotationY(g0.yaw + Math.PI / 2).setPosition(g0.x, gy, g0.z)); sg.computeBoundingSphere();
+    // grandstands all the way round the outside of the oval: tiers rise away from the rail, every seat faces the track,
+    // a roof on posts over the stands; gaps at the two ends of the home straight let people in
+    const grp = new MB(), O = c.W / 2 + 3.2, TIERS = 6, TD = 1.1, TH = 0.55, P = this.P, st = 4;
+    const gap = (s0: number) => { const u = ((s0 % P) + P) % P; return Math.abs(u - (c.L + Math.PI * c.R)) < 8 || Math.abs(u - (2 * c.L + Math.PI * c.R)) < 8; };
+    this.seats = [];
+    for (let s0 = 0; s0 < P; s0 += st) {
+      if (gap(s0) || gap(s0 + st)) continue;
+      for (let t = 0; t < TIERS; t++) {
+        const o0 = O + t * TD, o1 = o0 + TD, h = (t + 1) * TH;
+        const a0 = courseAt(c, s0, o0), b0 = courseAt(c, s0 + st, o0), a1 = courseAt(c, s0, o1), b1 = courseAt(c, s0 + st, o1);
+        const ya = y(a0.x, a0.z), yb = y(b0.x, b0.z);
+        const col = t % 2 ? seat : hex(0xc8c4bc);
+        grp.quad([a0.x, ya + h, a0.z], [b0.x, yb + h, b0.z], [b1.x, yb + h, b1.z], [a1.x, ya + h, a1.z], col, [a0.x, ya - 10, a0.z]);                         // seat deck
+        grp.quad([a0.x, ya + h - TH, a0.z], [b0.x, yb + h - TH, b0.z], [b0.x, yb + h, b0.z], [a0.x, ya + h, a0.z], shade(col, 0.8), [a1.x, ya + h - TH / 2, a1.z]); // riser facing the track
+        if (s0 % 8 === 0) this.seats.push({ s: s0 + st / 2, off: o0 + TD * 0.55, h: ya + h });
+      }
+      // back wall, roof posts and the canopy
+      const ow = O + TIERS * TD, a2 = courseAt(c, s0, ow), b2 = courseAt(c, s0 + st, ow), ya = y(a2.x, a2.z), yb = y(b2.x, b2.z);
+      grp.quad([a2.x, ya, a2.z], [b2.x, yb, b2.z], [b2.x, yb + TIERS * TH + 1.2, b2.z], [a2.x, ya + TIERS * TH + 1.2, a2.z], wood, [a2.x * 2 - courseAt(c, s0, ow - 1).x, ya + 2, a2.z * 2 - courseAt(c, s0, ow - 1).z]);
+      const r0 = courseAt(c, s0, O - 0.6), r1 = courseAt(c, s0 + st, O - 0.6), q0 = courseAt(c, s0, ow + 0.4), q1 = courseAt(c, s0 + st, ow + 0.4), ry = Math.max(ya, yb) + TIERS * TH + 3.4;
+      grp.quad([r0.x, ry - 0.6, r0.z], [r1.x, ry - 0.6, r1.z], [q1.x, ry, q1.z], [q0.x, ry, q0.z], roof, [r0.x, ry - 5, r0.z]);
+      grp.quad([r0.x, ry - 0.6, r0.z], [q0.x, ry, q0.z], [q1.x, ry, q1.z], [r1.x, ry - 0.6, r1.z], shade(roof, 0.7), [r0.x, ry + 5, r0.z]);
+      if (s0 % 12 === 0) for (const p of [r0, q0]) { const py = y(p.x, p.z); grp.cyl(p.x, p.z, 0.14, 0.14, py, ry - (p === r0 ? 0.6 : 0), 6, white); }
+    }
+    const sg = grp.toGeometry(); sg.computeBoundingSphere();
     const gs = new THREE.Mesh(sg, assets.rig); gs.castShadow = true;
-    this.stand = { x: g0.x, y: gy, z: g0.z, yaw: g0.yaw + Math.PI / 2 };
+    this.stand = { x: c.x, y: 0, z: c.z, yaw: 0 };
     const f0 = courseAt(c, c.L + Math.PI * c.R + c.L * 0.5, -c.W / 2 - 2.5), fy = y(f0.x, f0.z);
     m.cyl(f0.x, f0.z, 0.12, 0.12, fy, fy + 4, 8, white); m.box(f0.x, fy + 4.2, f0.z, 1.2, 1.2, 0.2, hex(0xe83a3a)); m.cyl(f0.x, f0.z, 0.5, 0.5, fy + 4.8, fy + 4.9, 12, white);
     const track = new THREE.Mesh(m.toGeometry(), assets.rig); track.receiveShadow = true;
     this.group.add(track, gs);
   }
   private stand: { x: number; y: number; z: number; yaw: number } | null = null;
+  private seats: { s: number; off: number; h: number }[] = [];
 
   update(dt: number, px: number, pz: number, timeSec: number): void {
     const c = RACECOURSE; if (!c) return;
@@ -122,11 +139,12 @@ export class Racecourse {
     if (on === this.crowd || !this.stand) return;
     this.crowd = on;
     if (!on) { this.folk.unpinAll('race'); return; }
-    const S = this.stand, cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
-    for (let t = 0; t < 5; t++) for (let k = 0; k < 9; k++) {
-      if (Math.random() < 0.3) continue;
-      const lx = -20 + k * 5 + (Math.random() - 0.5) * 2, lz = -t * 1.0 - 0.1, ly = 0.8 + t * 1.2;
-      this.folk.pin(S.x + lx * cs + lz * sn, S.y + ly, S.z - lx * sn + lz * cs, S.yaw, Math.random() < 0.45 ? Act.Dance : Act.Talk, -1, 0, 'race');
+    const c = RACECOURSE!;
+    const keep = Math.min(1, 80 / Math.max(1, this.seats.length));
+    for (const seat of this.seats) {
+      if (Math.random() > keep) continue;
+      const p = courseAt(c, seat.s + (Math.random() - 0.5) * 2, seat.off), q = courseAt(c, seat.s, seat.off - 4);
+      this.folk.pin(p.x, seat.h, p.z, Math.atan2(q.x - p.x, q.z - p.z), Math.random() < 0.5 ? Act.Dance : Math.random() < 0.5 ? Act.Talk : Act.Stand, -1, 0, 'race');
     }
   }
 }
