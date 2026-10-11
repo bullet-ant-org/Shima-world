@@ -88,8 +88,9 @@ export class Humanoid {
     this.model.traverse((o) => {
       const m = o as THREE.SkinnedMesh; if (!m.isMesh) return;
       const n = (m.material as THREE.Material).name || '';
-      if (/young_caucasian_female/.test(n)) bodies.push(m);
-      if (look !== 0 && /vnecktop|pleated|material\.001|Heelsandal|sport_briefs/.test(n)) m.visible = false;
+      // the briefs mesh fills the hole the body has under them: it is part of the body for the garment generator and stays on
+      if (/young_caucasian_female|sport_briefs/.test(n)) bodies.push(m);
+      if (look !== 0 && /vnecktop|pleated|material\.001|Heelsandal/.test(n)) m.visible = false;
       if ((spec.hair.base ?? 0) !== 0 && /^mat[123]$/.test(n)) m.visible = false;
     });
     this.flat = look !== 0;
@@ -172,6 +173,7 @@ export class Humanoid {
       else if (/vnecktop/.test(name)) mat.color.copy(tint(O.primary, 0.2));
       else if (/pleated|material\.001/.test(name)) mat.color.copy(tint(O.secondary, 0.2));
       else if (/Heelsandal/.test(name)) mat.color.copy(tint(O.bootColor, 0.3));
+      else if (/sport_briefs/.test(name)) mat.color.copy(new THREE.Color(O.look ? O.pants : '#2a2a36')).multiplyScalar(0.55);   // under-layer: never skin-coloured gaps
       else if (/Eye/.test(name)) mat.color.copy(tint(spec.face.iris, 0.55));
       else if (/eyebrow/.test(name)) mat.color.copy(tint(spec.hair.color, 0.1));
       m.material = mat; this.owned.push(mat);

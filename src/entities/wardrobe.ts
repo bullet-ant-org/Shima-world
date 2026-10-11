@@ -37,6 +37,8 @@ const mixC = (a: THREE.Color, b: THREE.Color, t: number) => a.clone().lerp(b, t)
 
 export class Dresser {
   private infos: Info[] = [];
+  /** welded position ids shared by all body meshes (the briefs patch meets the body along a seam) */
+  private weld = new Map<string, number>(); private weldN: number[] = []; private weldP: number[] = [];
   private F!: Frame;
   private mat: THREE.MeshToonMaterial;
   private bones = new Map<string, THREE.Vector3>();
@@ -65,11 +67,12 @@ export class Dresser {
         if (r === R.Head) { hx = Math.max(hx, Math.abs(x)); hy0 = Math.min(hy0, y); hy1 = Math.max(hy1, y); hz0 = Math.min(hz0, z); hz1 = Math.max(hz1, z); }
       }
       // weld UV-seam duplicates so seams are neither hems nor cracks
-      const wid = new Int32Array(n), key = new Map<string, number>(), acc: number[] = [];
+      const wid = new Int32Array(n), key = this.weld, acc = this.weldN;
       for (let i = 0; i < n; i++) {
-        const k = Math.round(pos.getX(i) * 2e5) + ',' + Math.round(pos.getY(i) * 2e5) + ',' + Math.round(pos.getZ(i) * 2e5);
-        let w = key.get(k); if (w === undefined) { w = key.size; key.set(k, w); acc.push(0, 0, 0); }
+        const k = Math.round(pos.getX(i) * 1.2e4) + ',' + Math.round(pos.getY(i) * 1.2e4) + ',' + Math.round(pos.getZ(i) * 1.2e4);   // ~1 mm: also joins the briefs patch to the body
+        let w = key.get(k); if (w === undefined) { w = key.size; key.set(k, w); acc.push(0, 0, 0); this.weldP.push(0, 0, 0, 0); }
         wid[i] = w; acc[w * 3] += nor.getX(i); acc[w * 3 + 1] += nor.getY(i); acc[w * 3 + 2] += nor.getZ(i);
+        const P4 = this.weldP; P4[w * 4] += pos.getX(i); P4[w * 4 + 1] += pos.getY(i); P4[w * 4 + 2] += pos.getZ(i); P4[w * 4 + 3]++;
       }
       const wn = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { const w = wid[i], l = Math.hypot(acc[w * 3], acc[w * 3 + 1], acc[w * 3 + 2]) || 1; wn[i * 3] = acc[w * 3] / l; wn[i * 3 + 1] = acc[w * 3 + 1] / l; wn[i * 3 + 2] = acc[w * 3 + 2] / l; }
@@ -86,11 +89,12 @@ export class Dresser {
 
   /** copy the kept body triangles, offset along normals, colour, bind to the skeleton */
   private wrap(keep: (I: Info, i: number) => boolean, off: (I: Info, i: number) => number, color: (I: Info, i: number, edge: boolean) => THREE.Color): void {
+    // pass 1: kept triangles of every mesh, hem edges counted across all of them
+    const ek = (a: number, b: number) => (a < b ? a * 65536 + b : b * 65536 + a);
+    const edges = new Map<number, number>(), kept: number[][] = [];
     for (const I of this.infos) {
-      const g = I.mesh.geometry, idx = g.getIndex()!, si = g.getAttribute('skinIndex') as THREE.BufferAttribute, sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
-      const ok = new Uint8Array(I.n); for (let i = 0; i < I.n; i++) ok[i] = keep(I, i) ? 1 : 0;
-      const tris: number[] = [], edges = new Map<number, number>();
-      const ek = (a: number, b: number) => (a < b ? a * 65536 + b : b * 65536 + a);
+      const idx = I.mesh.geometry.getIndex()!, ok = new Uint8Array(I.n), tris: number[] = [];
+      for (let i = 0; i < I.n; i++) ok[i] = keep(I, i) ? 1 : 0;
       for (let t = 0; t < idx.count; t += 3) {
         const a = idx.getX(t), b = idx.getX(t + 1), c = idx.getX(t + 2);
         if (!ok[a] || !ok[b] || !ok[c]) continue;
@@ -98,9 +102,14 @@ export class Dresser {
         const A = I.wid[a], Bw = I.wid[b], Cw = I.wid[c];
         for (const k of [ek(A, Bw), ek(Bw, Cw), ek(Cw, A)]) edges.set(k, (edges.get(k) ?? 0) + 1);
       }
-      if (!tris.length) continue;
-      const wedge = new Set<number>();
-      for (const [k, cnt] of edges) if (cnt === 1) { wedge.add(Math.floor(k / 65536)); wedge.add(k % 65536); }
+      kept.push(tris);
+    }
+    const wedge = new Set<number>();
+    for (const [k, cnt] of edges) if (cnt === 1) { wedge.add(Math.floor(k / 65536)); wedge.add(k % 65536); }
+    // pass 2: build each mesh's garment piece
+    this.infos.forEach((I, ii) => {
+      const tris = kept[ii]; if (!tris.length) return;
+      const g = I.mesh.geometry, si = g.getAttribute('skinIndex') as THREE.BufferAttribute, sw = g.getAttribute('skinWeight') as THREE.BufferAttribute;
       const edge = new Uint8Array(I.n); for (let i = 0; i < I.n; i++) if (wedge.has(I.wid[i])) edge[i] = 1;
       const remap = new Map<number, number>(), P: number[] = [], N: number[] = [], Cc: number[] = [], SI: number[] = [], SW: number[] = [], IX: number[] = [];
       for (const v of tris) {
@@ -108,7 +117,8 @@ export class Dresser {
         if (j === undefined) {
           j = remap.size; remap.set(v, j);
           const o = off(I, v), nx = I.wn[v * 3], ny = I.wn[v * 3 + 1], nz = I.wn[v * 3 + 2];
-          P.push(I.pos.getX(v) + nx * o, I.pos.getY(v) + ny * o, I.pos.getZ(v) + nz * o); N.push(nx, ny, nz);
+          const w4 = I.wid[v] * 4, Wp = this.weldP, cnt = Wp[w4 + 3];   // snapped to the welded position: seams close up
+          P.push(Wp[w4] / cnt + nx * o, Wp[w4 + 1] / cnt + ny * o, Wp[w4 + 2] / cnt + nz * o); N.push(nx, ny, nz);
           const col = color(I, v, !!edge[v]); Cc.push(col.r, col.g, col.b);
           for (let k = 0; k < 4; k++) { SI.push(si.getComponent(v, k)); SW.push(sw.getComponent(v, k)); }
         }
@@ -123,7 +133,7 @@ export class Dresser {
       m.bind(I.mesh.skeleton, I.mesh.bindMatrix);
       m.castShadow = true; m.frustumCulled = false;
       I.mesh.parent!.add(m); this.made.push(m); this.owned.push(geo);
-    }
+    });
   }
 
   // ---- shading helpers: soft fabric shading so flat toon colours read as cloth ----
