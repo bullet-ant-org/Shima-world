@@ -25,22 +25,22 @@ export class Preview {
     const ramp = new THREE.DataTexture(new Uint8Array([105, 178, 255]), 3, 1, THREE.RedFormat);
     ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.generateMipmaps = false; ramp.needsUpdate = true;
     this.assets = { ramp, rig: new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ramp }), pillarGlow: new THREE.MeshBasicMaterial({ color: 0x40e8ff }) };
-    this.scene.background = new THREE.Color(0x2a2f58);
     this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x6a5a8a, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 3); this.scene.add(sun);
     const rim = new THREE.DirectionalLight(0x8aa0ff, 1.0); rim.position.set(-3, 2, -3); this.scene.add(rim);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.1, 40), new THREE.MeshBasicMaterial({ color: 0x3a4075 }));
+    const floor = new THREE.Mesh(new THREE.RingGeometry(0.0, 1.0, 48), new THREE.MeshBasicMaterial({ color: 0x0a0c18, transparent: true, opacity: 0.55 }));
     floor.rotation.x = -Math.PI / 2; this.scene.add(floor);
     this.cleanup.push(() => { floor.geometry.dispose(); (floor.material as THREE.Material).dispose(); });
   }
 
   async start(): Promise<boolean> {
     try {
-      this.r = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: true });
+      this.r = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: true, alpha: true });
       await this.r.init();
     } catch { return false; }
     if (this.dead) { this.r.dispose(); return false; }
     this.r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.r.setClearColor(new THREE.Color(0x000000), 0);
     this.resize();
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(this.canvas);
     this.bindDrag();
@@ -80,6 +80,7 @@ export class Preview {
     this.timer = window.setTimeout(() => this.rebuild(), 60);
   }
   setDemo(d: Demo): void { this.demo = d; }
+  setYaw(y: number): void { this.tYaw = this.yaw = y; this.userTurned = true; }
   /** 0 = full body, 1 = face close-up */
   setZoom(z: number): void { this.tZoom = z; this.tYaw = z > 0.5 ? Math.round(this.tYaw / (2 * Math.PI)) * 2 * Math.PI : this.tYaw; }
 
@@ -97,7 +98,7 @@ export class Preview {
     this.zoom += (this.tZoom - this.zoom) * Math.min(1, dt * 6);
     if (this.demo === 'idle' && !this.userTurned && Math.abs(this.tYaw - this.yaw) < 0.01) this.tYaw += dt * 0.15;
     const H = this.hero, hs = (H?.height ?? 1.95) / 1.95, z = this.zoom;
-    const d = 6.2 * (0.35 + 0.65 * hs) * (1 - z) + 2.3 * (H?.headSize ?? 0.5) * z, ty = 0.98 * hs * (1 - z) + (H?.faceY ?? 1.66) * z;
+    const d = 6.2 * (0.35 + 0.65 * hs) * (1 - z) + 2.3 * (H?.headSize ?? 0.5) * z, zt = Math.sqrt(Math.max(0, z)), ty = 0.98 * hs * (1 - zt) + (H?.faceY ?? 1.66) * zt;
     this.cam.position.set(Math.sin(this.yaw) * d, ty + 0.15, Math.cos(this.yaw) * d);
     this.cam.lookAt(0, ty, 0);
     if (this.hero) {

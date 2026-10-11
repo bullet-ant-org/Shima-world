@@ -127,7 +127,8 @@ export class Humanoid {
     this.parentIdx = order.map((b, i) => (i === 0 ? -1 : order.indexOf(b.parent!)));
     const dresser = new Dresser(this.model, bodies, assets.ramp, this.owned);
     dresser.dress(spec);
-    dresser.glasses(spec.face.glasses ?? 0);
+    dresser.glasses(spec.face.glasses ?? 0, spec.acc?.glow);
+    dresser.accessories(spec);
     this.reshape(spec);
     if (this.weapon) this.attachWeapon(this.weapon);
   }

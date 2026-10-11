@@ -51,7 +51,9 @@ export interface CharacterSpec {
     glasses: number;   // 0 none, 1 round, 2 square, 3 shades
   };
   // hair
-  hair: { style: number; color: string; tip: string; sheen: string; bangs: number; /** base-model hairstyle (BASE_HAIR) */ base?: number };
+  hair: { style: number; color: string; tip: string; sheen: string; bangs: number; /** base-model hairstyle (BASE_HAIR) */ base?: number; /** length of what hangs below the jaw, 0.5 .. 1.6 */ len?: number };
+  /** base-model accessories (indices into the lists in hairdo.ts) */
+  acc: { hat: number; ear: number; neck: number; wrist: number; mask: number; back: number; paint: number; metal: string; color: string; glow: string };
   // outfit
   outfit: {
     top: number;       // 0 jacket, 1 vest, 2 long coat, 3 military coat, 4 dress
@@ -104,6 +106,7 @@ function defaultSpec0(gender: Gender): CharacterSpec {
       shadow: '#7a5ae0', shadowAmt: f ? 0.35 : 0, lips: '#d0626f', lipAmt: f ? 0.4 : 0, beard: 0, scar: false, glasses: 0,
     },
     hair: f ? { style: 1, color: '#14122a', tip: '#5a6fe0', sheen: '#8aa0ff', bangs: 1, base: 0 } : { style: 0, color: '#1b1b2e', tip: '#34439a', sheen: '#7a8ad8', bangs: 1, base: 1 },
+    acc: { hat: 0, ear: f ? 1 : 0, neck: 0, wrist: f ? 0 : 1, mask: 0, back: 0, paint: 0, metal: '#d9b45a', color: '#1b2352', glow: '#45ecff' },
     outfit: {
       top: 0, bottom: f ? 0 : 2, boots: 0, primary: '#1b2352', secondary: '#34439a', accent: '#d02e48', trim: '#e6b23a', pants: f ? '#242a49' : '#2a2f46', bootColor: '#181a26',
       scarfColor: '#d02e48', headbandColor: '#d02e48', glow: '#45ecff', scarf: true, katana: true, headband: true, wings: f,
@@ -116,7 +119,7 @@ function defaultSpec0(gender: Gender): CharacterSpec {
 export function normalize(s: Partial<CharacterSpec> | null | undefined): CharacterSpec {
   const d = defaultSpec((s?.gender as Gender) ?? 'female');
   if (!s) return d;
-  const out: CharacterSpec = { ...d, ...s, face: { ...d.face, ...(s.face ?? {}) }, hair: { ...d.hair, ...(s.hair ?? {}) }, outfit: { ...d.outfit, ...(s.outfit ?? {}) }, v: 1 };
+  const out: CharacterSpec = { ...d, ...s, face: { ...d.face, ...(s.face ?? {}) }, hair: { ...d.hair, ...(s.hair ?? {}) }, acc: { ...d.acc, ...(s.acc ?? {}) }, outfit: { ...d.outfit, ...(s.outfit ?? {}) }, v: 1 };
   if (s.outfit && (s.outfit as Partial<CharacterSpec['outfit']>).weapon === undefined) out.outfit.weapon = s.outfit.katana === false ? 0 : 1; // saves from before weapons
   out.outfit.katana = out.outfit.weapon === 1;
   return out;
@@ -179,8 +182,12 @@ export function randomSpec(gender?: Gender, npc = false): CharacterSpec {
   s.outfit.look = look;
   if (OUTFIT_PALETTES[look]) Object.assign(s.outfit, OUTFIT_PALETTES[look], Math.random() < 0.6 ? { primary: pick(OUTFIT_COLORS) } : {});
   s.outfit.gloves = false;
-  s.hair.base = g === 'male' ? pick([1, 1, 2, 4, 6, 7, 3]) : pick([0, 0, 3, 5, 5, 1]);
   s.face.beard = g === 'male' && Math.random() < 0.35 ? 1 + Math.floor(Math.random() * 4) : 0;
+  s.hair.base = g === 'male' ? pick([1, 1, 2, 4, 6, 7, 3, 12, 13, 19, 20, 21, 22, 23, 24, 25, 26, 27]) : pick([0, 0, 3, 5, 5, 1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 27]);
+  s.hair.len = rr(0.7, 1.3);
+  const maybe = (p: number, n: number) => (Math.random() < p ? 1 + Math.floor(Math.random() * (n - 1)) : 0);
+  s.acc = { hat: maybe(npc ? 0.2 : 0.3, 8), ear: maybe(g === 'female' ? 0.6 : 0.2, 6), neck: maybe(0.3, 6), wrist: maybe(0.4, 5), mask: maybe(npc ? 0.05 : 0.15, 6), back: maybe(npc ? 0.2 : 0.3, 4), paint: maybe(npc ? 0.03 : 0.12, 6),
+    metal: pick(['#d9b45a', '#c8c8d8', '#b87a4a', '#2a2a36']), color: pick(OUTFIT_COLORS), glow: pick(['#45ecff', '#ff6ad0', '#8aff6a', '#ffd84a', '#b08aff']) };
   if (npc) { s.outfit.weapon = Math.random() < 0.06 ? 1 : 0; s.base = 0; s.height = g === 'male' ? rr(0.98, 1.1) : rr(0.92, 1.03); }
   return s;
 }
