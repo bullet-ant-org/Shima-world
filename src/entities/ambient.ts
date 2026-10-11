@@ -9,6 +9,7 @@
 import * as THREE from 'three/webgpu';
 import { loft, ends } from './sculpt';
 import { heightAt } from '../world/terrain';
+import { NET, blocked, covered } from '../world/layout';
 import { Act, type Townsfolk } from './npcs';
 
 const TAU = Math.PI * 2;
@@ -81,11 +82,13 @@ function planeGeo(c: number): { body: THREE.BufferGeometry; prop: THREE.BufferGe
 interface Glider { obj: THREE.Group; cx: number; cz: number; r: number; ang: number; w: number; alt: number }
 interface Surfer { obj: THREE.Group; x0: number; z0: number; dx: number; dz: number; len: number; u: number; dir: number; kite: THREE.Object3D }
 interface Plane { obj: THREE.Group; prop: THREE.Mesh; cx: number; cz: number; r: number; ang: number; w: number; alt: number }
+interface Kite { obj: THREE.Mesh; line: THREE.Line; hand: THREE.Vector3; yaw: number; ph: number; h: number }
 interface Beach { x: number; z: number; yaw: number; ball: THREE.Mesh; set: THREE.Group; pa: THREE.Vector3; pb: THREE.Vector3; t: number }
 
 export class Ambient {
   readonly group = new THREE.Group();
   private mat: THREE.MeshToonMaterial;
+  private kites: Kite[] = []; private park: { x: number; z: number; set: THREE.Group } | null = null;
   private gliders: Glider[] = []; private surfers: Surfer[] = []; private planes: Plane[] = []; private beaches: Beach[] = [];
   private scanT = 0; private lastX = 1e9; private lastZ = 1e9;
   private lineMat = new THREE.LineBasicMaterial({ color: 0x404048, transparent: true, opacity: 0.6 });
@@ -149,6 +152,13 @@ export class Ambient {
       p.obj.position.set(x, Math.max(heightAt(x, z) + 120, p.alt), z);
       p.obj.rotation.set(0, Math.atan2(-Math.sin(p.ang) * Math.sign(p.w), Math.cos(p.ang) * Math.sign(p.w)), -Math.sign(p.w) * 0.35, 'YXZ');
     }
+    for (const k of this.kites) {
+      // kites hang downwind, swooping and swaying on the breeze; the line runs from the child's hand
+      const sw = Math.sin(timeSec * 0.9 + k.ph), sw2 = Math.sin(timeSec * 1.7 + k.ph * 2);
+      const kx = k.hand.x + Math.sin(k.yaw) * 20 + Math.cos(k.yaw) * sw * 5, kz = k.hand.z + Math.cos(k.yaw) * 20 - Math.sin(k.yaw) * sw * 5, ky = k.hand.y + k.h + sw2 * 2.5;
+      k.obj.position.set(kx, ky, kz); k.obj.rotation.set(-0.5 + sw2 * 0.15, k.yaw, sw * 0.5, 'YXZ');
+      const lp = k.line.geometry.getAttribute('position') as THREE.BufferAttribute; lp.setXYZ(1, kx, ky - 0.6, kz); lp.needsUpdate = true;
+    }
     for (const b of this.beaches) {
       // the volleyball arcs back and forth over the net between the two teams
       b.t += dt; const u = (b.t % 2.2) / 2.2, leg = Math.floor(b.t / 2.2) % 2;
@@ -160,6 +170,7 @@ export class Ambient {
   /** (re)place activities around the player: hills for gliders, coast for kites and beach life */
   private respawn(px: number, pz: number, day: number | boolean): void {
     const rnd = Math.random;
+    this.placePark(px, pz, !!day);
     for (const g of this.gliders) {
       if (g.cx < 1e8 && Math.hypot(g.cx - px, g.cz - pz) < 900) continue;
       g.cx = 1e9;
@@ -196,6 +207,51 @@ export class Ambient {
       for (let j = 0; j < 12; j++) { const b = (j / 12) * TAU; if (heightAt(x + Math.cos(b) * 30, z + Math.sin(b) * 30) < -0.5) { wx += Math.cos(b); wz += Math.sin(b); n++; } }
       if (!n || n > 6) continue;
       this.makeBeach(x, z, Math.atan2(wx, wz));
+      break;
+    }
+  }
+
+  /** kids flying kites and families picnicking on an open meadow or park near the player (daytime) */
+  private placePark(px: number, pz: number, day: boolean): void {
+    if (this.park && Math.hypot(this.park.x - px, this.park.z - pz) < 600 && day) return;
+    if (this.park) { this.group.remove(this.park.set); this.park = null; }
+    this.kites = []; this.folk.unpinAll('park');
+    if (!day) return;
+    const rnd = Math.random;
+    for (let k = 0; k < 200; k++) {
+      const a = rnd() * TAU, r = 40 + rnd() * 320, x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r, h = heightAt(x, z);
+      if (h < 3 || h > 90) continue;
+      let ok = true;
+      for (let j = 0; j < 8 && ok; j++) { const b = (j / 8) * TAU, q = heightAt(x + Math.cos(b) * 25, z + Math.sin(b) * 25); if (Math.abs(q - h) > 4 || q < 2) ok = false; }
+      if (!ok || blocked(x, z) || NET.edgeDist(x, z, 14) < 8 || covered(x, z)) continue;
+      const set = new THREE.Group(), wind = rnd() * TAU, geos: THREE.BufferGeometry[] = [];
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xf4f2ec, transparent: true, opacity: 0.7 });
+      for (let i = 0; i < 4; i++) {
+        const kx = x + (rnd() - 0.5) * 30, kz = z + (rnd() - 0.5) * 30, ky = heightAt(kx, kz);
+        this.folk.pin(kx, ky, kz, wind, Act.Kite, rnd() < 0.5 ? 0 : 1, 0, 'park', 0.66 + rnd() * 0.08);
+        const [c1, c2] = CANOPY[(i + 1) % CANOPY.length];
+        const kg = new THREE.BufferGeometry();
+        kg.setAttribute('position', new THREE.Float32BufferAttribute([0, 1.1, 0, -0.75, 0, 0, 0, -1.3, 0, 0.75, 0, 0], 3));
+        const cA = new THREE.Color(c1), cB = new THREE.Color(c2);
+        kg.setAttribute('color', new THREE.Float32BufferAttribute([cA.r, cA.g, cA.b, cB.r, cB.g, cB.b, cA.r, cA.g, cA.b, cB.r, cB.g, cB.b], 3));
+        kg.setIndex([0, 1, 2, 0, 2, 3]); kg.computeVertexNormals();
+        const kite = new THREE.Mesh(kg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+        // tail of little bows
+        for (let t = 1; t <= 6; t++) { const bow = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.18), new THREE.MeshBasicMaterial({ color: t % 2 ? c1 : c2, side: THREE.DoubleSide })); bow.position.set(Math.sin(t) * 0.3, -1.3 - t * 0.55, 0); kite.add(bow); }
+        const hand = new THREE.Vector3(kx, ky + 1.6, kz);
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([hand, hand]), lineMat);
+        set.add(kite, line);
+        this.kites.push({ obj: kite, line, hand, yaw: wind, ph: rnd() * 6, h: 18 + rnd() * 10 });
+      }
+      // a picnic or two: blanket, basket, a family sitting on the grass
+      for (let i = 0; i < 2; i++) {
+        const bx = x + (rnd() - 0.5) * 36, bz = z + (rnd() - 0.5) * 36, by = heightAt(bx, bz), c = [0xd8283c, 0x2a6ad8][i];
+        const bl = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.04, 2.0), new THREE.MeshToonMaterial({ color: c })); bl.position.set(bx, by + 0.03, bz); set.add(bl);
+        const bk = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.35), new THREE.MeshToonMaterial({ color: 0x9a6a3a })); bk.position.set(bx + 0.4, by + 0.2, bz + 0.2); set.add(bk);
+        for (let j = 0; j < 3; j++) { const aa = (j / 3) * TAU; this.folk.pin(bx + Math.cos(aa) * 0.9, by, bz + Math.sin(aa) * 0.75, Math.atan2(-Math.cos(aa), -Math.sin(aa)), j === 2 ? Act.Lie : Act.Sit, -1, j === 2 ? 0.05 : -0.38, 'park', j === 1 ? 0.7 : 0); }
+      }
+      set.traverse((o) => { o.frustumCulled = false; });
+      this.group.add(set); this.park = { x, z, set };
       break;
     }
   }

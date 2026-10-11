@@ -155,7 +155,7 @@ function bodyMaterial(ramp: THREE.Texture, SX: number): THREE.MeshToonNodeMateri
 // ---------------------------------------------------------------------------------------------------------------------
 // routines
 // ---------------------------------------------------------------------------------------------------------------------
-export enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse, Play, Lie, Swim }
+export enum Act { Walk, Stand, Sit, Hoe, Plant, Pray, Dance, Talk, Vend, Browse, Play, Lie, Swim, Kite }
 interface Slot { x: number; z: number; ry: number; y0: number; act: Act; h0: number; h1: number; p: number; v: number; agent: number; seed: number }
 
 const SKIN = [0xffe0c8, 0xf7d0b0, 0xe8b890, 0xc89070, 0x9a6a4a, 0xffd8c0].map((h) => new THREE.Color(h));
@@ -276,11 +276,12 @@ export class Townsfolk {
   }
 
   /** a person placed by hand (shopkeepers, diners...) at an absolute height; returns false when the pool is exhausted */
-  pin(x: number, y: number, z: number, yaw: number, act: Act, v = -1, lift = 0, tag = 'room'): boolean {
+  pin(x: number, y: number, z: number, yaw: number, act: Act, v = -1, lift = 0, tag = 'room', scale = 0): boolean {
     const vv = v >= 0 ? v : this.rnd() < 0.5 ? 0 : 1;
     const a = this.take(vv) ?? this.take(vv === 2 ? 0 : 1 - vv); if (!a) return false;
     a.slot = PINNED; a.act = act; a.path = null; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.lift = lift; a.tag = tag;
     if (act === Act.Sit) a.sc = Math.max(a.sc, 0.93);
+    if (scale) a.sc = scale;
     return true;
   }
   unpinAll(tag = 'room'): void { for (const a of this.ag) if (a.on && a.slot === PINNED && a.tag === tag) this.release(a); }
@@ -411,7 +412,7 @@ export class Townsfolk {
   private assignStars(px: number, pz: number): void {
     if (!this.stars.length) return;
     const near: [number, number][] = [];
-    this.ag.forEach((a, i) => { if (a.on && a.v !== 2 && a.act !== Act.Sit && a.act !== Act.Plant && a.act !== Act.Hoe && a.act !== Act.Lie && a.act !== Act.Swim && a.act !== Act.Play) { const d = Math.hypot(a.x - px, a.z - pz); if (d < 32) near.push([i, d]); } });
+    this.ag.forEach((a, i) => { if (a.on && a.v !== 2 && a.act !== Act.Sit && a.act !== Act.Plant && a.act !== Act.Hoe && a.act !== Act.Lie && a.act !== Act.Swim && a.act !== Act.Play && a.act !== Act.Kite) { const d = Math.hypot(a.x - px, a.z - pz); if (d < 32) near.push([i, d]); } });
     near.sort((a, b) => a[1] - b[1]);
     const want = new Set(near.slice(0, this.stars.length).map((n) => n[0]));
     for (const st of this.stars) if (st.agent >= 0 && (!want.has(st.agent) || !this.ag[st.agent].on)) { this.starOf.delete(st.agent); st.agent = -1; st.body.root.visible = false; }
@@ -525,6 +526,12 @@ export class Townsfolk {
         const c = (t * 0.55 + a.k * 0.37) % 1, jump = c > 0.75 ? Math.sin((c - 0.75) / 0.25 * Math.PI) : 0;
         knL = knR = 0.55 - 0.5 * jump; hipL = hipR = -0.45 + 0.4 * jump; sp = 0.25 - 0.2 * jump;
         shL = shR = -0.6 - 2.2 * jump; elL = elR = -0.5 + 0.4 * jump; rL = rR = 0.15; bob = -0.08 + 0.55 * jump;
+        break;
+      }
+      case Act.Kite: { // flying a kite: one arm up holding the line, leaning back, little tugs and steps
+        const tug = Math.sin(t * 2.3 + a.k) * 0.5 + 0.5;
+        shR = -2.5 + 0.3 * tug; elR = -0.3; rR = 0.2; shL = -0.9 + 0.2 * tug; elL = -0.9; rL = 0.25;
+        sp = -0.18 - 0.06 * tug; hipL = -0.25; hipR = 0.15; knL = 0.2; knR = 0.1; hd -= 0.0; bob = -0.02;
         break;
       }
       case Act.Lie: // sunbathing on a towel: lying on the back, hands behind the head, one knee up
