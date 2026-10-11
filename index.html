@@ -21,7 +21,11 @@
     button { background: linear-gradient(90deg, #ff3d6e, #7a5cff); border: 0; color: #fff; font-size: 17px; padding: 12px 28px; border-radius: 8px; letter-spacing: .12em; cursor: pointer; }
     button.alt { background: #1b1f3a; border: 1px solid #3a4075; }
     .bar { width: min(420px, 80vw); height: 8px; background: #1b1f3a; border-radius: 4px; overflow: hidden; }
-    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #00e5ff, #7a5cff); transition: width .2s; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #00e5ff, #7a5cff, #00e5ff); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; transition: width .35s ease-out; }
+    @keyframes shimmer { from { background-position: 0 0; } to { background-position: -200% 0; } }
+    #loading { background: radial-gradient(ellipse at 50% 30%, #2a3a7a 0%, #10142e 60%, #070914 100%); }
+    #loading h1 { letter-spacing: .4em; text-shadow: 0 0 18px rgba(120,200,255,.6); }
+    #load-tip { opacity: .65; font-size: 12px; max-width: 520px; text-align: center; margin-top: 18px; min-height: 2.6em; }
     #rotate { background: #05060d; z-index: 50; }
     @media (orientation: portrait) { #rotate { display: flex !important; } }
     #hud { position: fixed; left: 8px; top: 8px; font: 11px/1.4 monospace; color: #9fffe0; white-space: pre; z-index: 5; pointer-events: none; text-shadow: 0 0 3px #000; }
@@ -102,7 +106,7 @@
       <button id="cb-done">SAVE &amp; BACK</button>
     </div>
   </div>
-  <div id="loading" class="screen"><h1>LOADING</h1><div class="bar"><i id="load-fill"></i></div><p id="load-text"></p></div>
+  <div id="loading" class="screen"><h1>SHIMA WORLD</h1><div class="bar"><i id="load-fill"></i></div><p id="load-text"></p><p id="load-tip"></p></div>
 
   <div id="rotate" class="screen"><h1>ROTATE DEVICE</h1><p>Shima World plays in landscape only.</p></div>
 

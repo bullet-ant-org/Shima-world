@@ -35,7 +35,11 @@ async function refreshMenu(): Promise<void> {
 async function startGame(): Promise<void> {
   show('loading');
   const fill = $('load-fill'), txt = $('load-text');
-  const step = (p: number, t: string) => { fill.style.width = p + '%'; txt.textContent = t; };
+  const step = (p: number, t: string) => { fill.style.width = p + '%'; txt.textContent = t + '  ' + Math.round(p) + '%'; };
+  const tips = ['Walk up to a shop, temple or tower door and press ENTER to go inside.', 'Take a tower elevator to the roof for the best view of the city.', 'Running and flying use energy; rest or walk to recover it.', 'Visit shrines and temples to earn honour.', 'Look up: dragons, a phoenix and sky whales roam the skies.', 'The racecourse in Sakura Valley runs races all day.', 'Find the floating islands and their waterfalls far out at sea.'];
+  let tipI = Math.floor(Math.random() * tips.length);
+  const tipEl = $('load-tip'); tipEl.textContent = tips[tipI];
+  const tipTimer = setInterval(() => { tipI = (tipI + 1) % tips.length; tipEl.textContent = tips[tipI]; }, 3500);
   step(10, 'Locking landscape…');
   await lockLandscape();
   step(30, 'Preparing renderer…');
@@ -45,8 +49,8 @@ async function startGame(): Promise<void> {
   if (dev) { (window as unknown as { __game: Game }).__game = game; void import('./world/layout').then((L) => { (window as unknown as { __layout: unknown }).__layout = L; }); }
   step(60, 'Building world…');
   const spec = normalize(await kvGet<CharacterSpec>('character').catch(() => null));
-  await game.init(save, spec);
-  step(100, 'Done');
+  await game.init(save, spec, step);
+  step(100, 'Done'); clearInterval(tipTimer);
   show(null);
   $('topbtns').style.display = 'flex';
   document.querySelectorAll<HTMLElement>('#stickL,#acts,#zone').forEach((e) => (e.style.display = ''));

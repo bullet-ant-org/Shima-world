@@ -112,11 +112,15 @@ export class Game {
     this.shadowsOn = profile.q.shadows;
   }
 
-  async init(save?: SaveData, spec?: CharacterSpec): Promise<void> {
+  async init(save?: SaveData, spec?: CharacterSpec, progress: (p: number, msg: string) => void = () => {}): Promise<void> {
+    // each stage reports progress and yields a frame so the loading screen actually repaints between heavy steps
+    const stage = async (p: number, msg: string) => { progress(p, msg); await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0))); };
+    await stage(32, 'Preparing renderer…');
     this.gr = await GameRenderer.create(this.canvas, this.profile.webgpu, this.profile.dpr);
     this.gr.setScale(this.dyn.scale);
     const q = this.profile.q;
 
+    await stage(38, 'Raising the islands, the city and the villages…');
     this.world = new World(this.assets, { outlines: q.outlines === 'all', detail: q.detailWindows });
     this.scene.add(this.world.group);
     this.sky = new Sky(this.assets.ramp);
@@ -124,6 +128,7 @@ export class Game {
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x8fcbff);
 
+    await stage(52, 'Loading characters…');
     await loadBaseModel().catch((e) => console.error('base model failed to load', e));  // also used for the close-up townsfolk
     // first launch (or a save from before the islands existed / one that ended up at sea) starts in Sakura Valley
     const onLand = !!save && zoneAt(save.x, save.z) !== 'sea';
@@ -131,25 +136,30 @@ export class Game {
     if (save) this.gameTime = save.time;
     this.scene.add(this.player.group);
 
+    await stage(60, 'Growing grass…');
     if (q.grass > 0) {
       this.grass = new Grass(q.grass, q.grassR, this.assets.ramp, (x, z, c) => this.world.grassAt(x, z, c));
       this.grass.yAt = (x, z) => heightAt(x, z);
       this.scene.add(this.grass.mesh);
       for (let i = 0; i < 40; i++) this.grass.update(this.player.x, this.player.z, 200);
     }
+    await stage(66, 'Furnishing interiors…');
     this.interiors = new Interiors(this.scene, this.assets);
     this.hud2 = new Hud(); this.hud2.doors = this.interiors.doors;
     this.herd = new Herd(this.assets.rig, PASTURES, q.npc > 60 ? 18 : 10);
     this.scene.add(this.herd.group);
     this.player.herd = this.herd;
+    await stage(72, 'Waking the townsfolk…');
     this.npc = new Townsfolk(Math.max(50, Math.round(q.npc * 1.6)), this.assets.ramp);
     this.npc.enableStars(this.assets, q.npc >= 150 ? 8 : q.npc >= 70 ? 4 : 2);
     this.races = new Racecourse(this.assets, this.npc); this.scene.add(this.races.group);
+    await stage(80, 'Summoning dragons and sea serpents…');
     this.creatures = new Creatures(this.assets.ramp, this.assets.rig); this.scene.add(this.creatures.group);
+    await stage(85, 'Launching ships, kites and paragliders…');
     this.port = new Seaport(this.assets); this.scene.add(this.port.group);
     this.ambient = new Ambient(this.assets.ramp, this.npc); this.scene.add(this.ambient.group);
     this.floating = new FloatingIslands(this.assets.ramp); this.scene.add(this.floating.group);
-    this.streetLights = new StreetLights(q.npc >= 150 ? 8 : q.npc >= 70 ? 5 : 3); this.scene.add(this.streetLights.group);
+    this.streetLights = new StreetLights(q.npc >= 150 ? 4 : q.npc >= 70 ? 2 : 0);   // every point light costs every lit pixel: keep the pool small this.scene.add(this.streetLights.group);
     this.traffic = new TrafficSystem(Math.round(q.traffic * 1.6), this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
     this.remotes = new RemotePlayers(this.assets);
@@ -189,7 +199,10 @@ export class Game {
     this.input = new Input();
     this.applyTime();
     // prime the first ring of chunks before showing the world
-    for (let i = 0; i < 40; i++) this.world.update(this.player.x, this.player.z, 0, 0, q.viewRings, this.camera, 6);
+    for (let i = 0; i < 40; i++) {
+      this.world.update(this.player.x, this.player.z, 0, 0, q.viewRings, this.camera, 6);
+      if (i % 8 === 0) await stage(90 + i / 5, 'Streaming the world around you…');
+    }
     this.gr.setAnimationLoop((t) => this.frame(t));
   }
 
