@@ -90,7 +90,7 @@ function dragonGeo(v: number, len: number): THREE.BufferGeometry {
   const path: V3[] = []; for (let i = 0; i <= 10; i++) path.push([0, 0, -i * len / 10]);
   const scale = grad(C.body, C.belly, (_t, a) => (Math.sin(a) < -0.35 ? 1 : 0));
   g.push(loft({
-    path, steps: 140, seg: 14, r: (t) => [R * rp(t) * 1.05, R * rp(t)],
+    path, steps: 220, seg: 18, r: (t) => [R * rp(t) * 1.05, R * rp(t)],
     shape: (t, a) => 1 + 0.06 * Math.max(0, Math.sin(a * 6 + t * 260)),                 // scale ridges
     color: (t, a, p, out) => { scale(t, a, p, out); if (Math.sin(a) > -0.35 && Math.sin(t * 380) > 0.6) out.multiplyScalar(0.82); },
   }));
@@ -100,6 +100,12 @@ function dragonGeo(v: number, len: number): THREE.BufferGeometry {
     const r = R * rp(t), h = R * (0.9 + 0.5 * Math.sin(i * 0.9)) * (1 - t * 0.6);
     g.push(prim(new THREE.ConeGeometry(r * 0.35, h, 4), i % 3 ? C.fin : C.horn, M4(0, r * 0.95 + h * 0.4, -t * len, -0.5, 0, 0)));
   }
+  // the dragon's pearl, held in a front claw, wreathed in flame
+  { const z = -0.2 * len, r = R * rp(0.2);
+    g.push(prim(new THREE.SphereGeometry(r * 0.55, 14, 10), 0xf4fbff, M4(r * 1.5, -r * 2.5, z + r * 1.6)));
+    for (let k = 0; k < 6; k++) g.push(prim(new THREE.ConeGeometry(r * 0.16, r * 0.9, 5), k % 2 ? C.fin : 0xffe066, M4(r * 1.5 + Math.cos(k) * r * 0.4, -r * 2.2, z + r * 1.6 + Math.sin(k) * r * 0.4, 0.3 * Math.cos(k), 0, 0.3 * Math.sin(k)))); }
+  // a second row of fine hair along the spine behind the head
+  for (let i = 0; i < 30; i++) { const t = 0.02 + i * 0.012, r = R * rp(t); g.push(prim(new THREE.ConeGeometry(r * 0.12, r * 1.3, 4), C.mane, M4(Math.sin(i * 1.7) * r * 0.35, r * 0.85, -t * len, -1.1, 0, Math.sin(i) * 0.4))); }
   // tail plume
   for (let k = 0; k < 7; k++) { const a = (k / 7) * TAU; g.push(prim(new THREE.ConeGeometry(R * 0.25, R * 3, 5), C.mane, M4(Math.cos(a) * R * 0.2, Math.sin(a) * R * 0.2, -len - R * 1.2, -Math.PI / 2 + Math.sin(a) * 0.3, 0, Math.cos(a) * 0.3))); }
   // four short legs with three-toed claws

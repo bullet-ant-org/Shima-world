@@ -72,6 +72,11 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
     r: (t) => [0.3 - 0.13 * t, 0.19 - 0.07 * t], color: bodyCol,
   })];
   neck.push(loft({ path: [[0, -0.02, -0.2], [0, 0.22, -0.02], [0, 0.48, 0.2]], steps: 12, seg: 8, up: [1, 0, 0], r: (t) => [0.06 * (1 - 0.3 * t), 0.035], shape: (_t, a) => 1 + 0.25 * Math.abs(Math.sin(a * 5)), color: C.mane }));
+  // flowing mane: strands falling to the off side along the crest
+  for (let k = 0; k < 16; k++) {
+    const t = k / 15, bx = 0, by = -0.02 + 0.5 * t, bz = -0.2 + 0.4 * t, len = 0.26 - 0.08 * t + 0.04 * Math.sin(k * 2.3);
+    neck.push(loft({ path: [[bx, by, bz], [0.07, by - len * 0.35, bz - 0.02], [0.12, by - len, bz - 0.05 + 0.03 * Math.sin(k)]], steps: 5, seg: 5, r: (q) => [0.028 * (1 - q) + 0.004, 0.012 * (1 - q) + 0.003], color: C.mane }));
+  }
   put('neck', neck);
 
   // ---- head: skull to muzzle, jaw cheek, ears, eyes, forelock, bridle ----
@@ -97,6 +102,9 @@ function buildParts(coat: number): Record<Part, { g: THREE.BufferGeometry; hull:
     path: [[0, 0.04, 0.02], [0, -0.12, -0.14], [0, -0.45, -0.22], [0, -0.8, -0.16]], steps: 14, seg: 10, up: [1, 0, 0],
     r: (t) => [0.07 + 0.04 * Math.sin(PI * t), 0.09 + 0.08 * Math.sin(PI * Math.min(1, t * 1.2)) * (1 - t * 0.5)],
     shape: (_t, a) => 1 + 0.15 * Math.abs(Math.sin(a * 4)), color: C.mane,
+  }), ...Array.from({ length: 9 }, (_, k) => {                                   // loose strands spreading from the dock
+    const a = (k / 9) * PI * 2, sx = Math.cos(a) * 0.06, sz = Math.sin(a) * 0.05;
+    return loft({ path: [[sx * 0.5, -0.1, -0.12 + sz * 0.5], [sx, -0.45, -0.24 + sz], [sx * 1.6, -0.88 - (k % 3) * 0.04, -0.18 + sz * 1.4]], steps: 8, seg: 5, r: (q: number) => 0.03 * (1 - 0.7 * q), color: C.mane });
   })]);
 
   // ---- legs: upper (forearm / gaskin) and lower (cannon, fetlock, pastern, hoof) ----
