@@ -548,10 +548,56 @@ export function hasBuildingDetail(spec: BuildingSpec): boolean { return cache.ha
 export const hasCustomModel = (spec: BuildingSpec) => !!CUSTOM[spec.tpl];
 export const isSignature = (spec: BuildingSpec) => !!CUSTOM[spec.tpl] && spec.tpl !== 'office' && spec.tpl !== 'machiya';
 
+/**
+ * Far stand-in for a custom design, traced from its detailed model: the model is sampled on a 2 m grid (highest surface
+ * and its colour per cell, plus the wall colour), and runs of equal height are merged into boxes. So the distant
+ * version has the real silhouette (towers, podiums, roofs, masts) and the building never changes shape as you approach.
+ */
+function silhouette(src: THREE.BufferGeometry, tall: boolean): THREE.BufferGeometry {
+  const P = src.getAttribute('position'), Cc = src.getAttribute('color'), I = src.getIndex()!, res = 2;
+  src.computeBoundingBox(); const bb = src.boundingBox!;
+  const x0 = bb.min.x - res, z0 = bb.min.z - res, nx = Math.ceil((bb.max.x - x0) / res) + 2, nz = Math.ceil((bb.max.z - z0) / res) + 2, N = nx * nz;
+  const top = new Float32Array(N).fill(-1), tc = new Float32Array(N * 3), wc = new Float32Array(N * 4);
+  for (let t = 0; t < I.count; t += 3) {
+    const a = I.getX(t), b = I.getX(t + 1), c = I.getX(t + 2);
+    const ax = P.getX(a), ay = P.getY(a), az = P.getZ(a), ux = P.getX(b) - ax, uy = P.getY(b) - ay, uz = P.getZ(b) - az, vx = P.getX(c) - ax, vy = P.getY(c) - ay, vz = P.getZ(c) - az;
+    const ny = uz * vx - ux * vz, nl = Math.hypot(uy * vz - uz * vy, ny, ux * vy - uy * vx) || 1, vert = Math.abs(ny) / nl < 0.3;
+    const cr = (Cc.getX(a) + Cc.getX(b) + Cc.getX(c)) / 3, cg = (Cc.getY(a) + Cc.getY(b) + Cc.getY(c)) / 3, cb = (Cc.getZ(a) + Cc.getZ(b) + Cc.getZ(c)) / 3;
+    const L = Math.max(Math.hypot(ux, uz), Math.hypot(vx, vz)), k = Math.min(80, Math.max(1, Math.ceil(L / (res * 0.6))));
+    for (let i = 0; i <= k; i++) for (let j = 0; j <= k - i; j++) {
+      const s2 = i / k, r = j / k, px = ax + ux * s2 + vx * r, py = ay + uy * s2 + vy * r, pz = az + uz * s2 + vz * r;
+      if (py < 0.2) continue;
+      const cell = Math.floor((px - x0) / res) + Math.floor((pz - z0) / res) * nx;
+      if (cell < 0 || cell >= N) continue;
+      if (py > top[cell]) { top[cell] = py; tc[cell * 3] = cr; tc[cell * 3 + 1] = cg; tc[cell * 3 + 2] = cb; }
+      if (vert) { wc[cell * 4] += cr; wc[cell * 4 + 1] += cg; wc[cell * 4 + 2] += cb; wc[cell * 4 + 3]++; }
+    }
+  }
+  const q = (h: number) => Math.round(h * 2) / 2, used = new Uint8Array(N), m = new MB(true);
+  const same = (a: number, b: number) => q(top[a]) === q(top[b]) && Math.abs(tc[a * 3] - tc[b * 3]) + Math.abs(tc[a * 3 + 1] - tc[b * 3 + 1]) + Math.abs(tc[a * 3 + 2] - tc[b * 3 + 2]) < 0.25;
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const c0 = i + j * nx; if (used[c0] || top[c0] < 0.3) continue;
+    let w = 1; while (i + w < nx && !used[c0 + w] && top[c0 + w] >= 0.3 && same(c0, c0 + w)) w++;
+    let d = 1;
+    grow: while (j + d < nz) { for (let k = 0; k < w; k++) { const c = c0 + k + d * nx; if (used[c] || top[c] < 0.3 || !same(c0, c)) break grow; } d++; }
+    let wr = 0, wg = 0, wb = 0, wn = 0;
+    for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) { const c = c0 + dx + dz * nx; used[c] = 1; wr += wc[c * 4]; wg += wc[c * 4 + 1]; wb += wc[c * 4 + 2]; wn += wc[c * 4 + 3]; }
+    const h = q(top[c0]), roof: V3 = [tc[c0 * 3], tc[c0 * 3 + 1], tc[c0 * 3 + 2]], wall: V3 = wn ? [wr / wn, wg / wn, wb / wn] : shade(roof, 0.85);
+    const ax = x0 + i * res, az = z0 + j * res, bx = ax + w * res, bz = az + d * res;
+    m.prism([[ax, az], [bx, az], [bx, bz], [ax, bz]], 0, h, wall, roof, tall && h > 14 ? [33, 28.8] : undefined);
+  }
+  return m.toGeometry();
+}
+
 export function buildingGeo(spec: BuildingSpec, detail: boolean): { lit: THREE.BufferGeometry; lights: THREE.BufferGeometry | null } {
   const key = specKey(spec) + (detail ? 'N' : 'F');
   const hit = cache.get(key);
   if (hit) return { lit: hit.lit, lights: hit.lights };
+  if (!detail && CUSTOM[spec.tpl]) {
+    const far = { lit: silhouette(buildingGeo(spec, true).lit, spec.tpl === 'office' || spec.tpl === 'hq'), lights: null, far: null as unknown as THREE.BufferGeometry };
+    cache.set(key, far as BuildingGeo);
+    return { lit: far.lit, lights: null };
+  }
   const pal = PALETTES[spec.pal % PALETTES.length], wall = hex(pal.wall), r = mulberry32(spec.seed);
   const prisms = footprints(spec);
   const lit = new MB(!detail), lights = new MB();
