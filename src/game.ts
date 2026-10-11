@@ -12,6 +12,7 @@ import { Creatures } from './entities/creatures';
 import { Seaport } from './world/seaport';
 import { Ambient } from './entities/ambient';
 import { StreetLights } from './world/lamps';
+import { FloatingIslands } from './world/floating';
 import { Interiors, ROOM_NAMES, type Door } from './world/interiors';
 import { Hud, type Stats } from './ui/hud';
 import { Herd } from './entities/horse';
@@ -35,6 +36,7 @@ const ATMOS: Record<IslandId, { tint: THREE.Color; amt: number; fog: number; sno
   ember: { tint: new THREE.Color(0x8a2410), amt: 0.5, fog: 0.8, snow: false, light: 0.9 },
   snow: { tint: new THREE.Color(0xe2f0ff), amt: 0.5, fog: 0.75, snow: true, light: 1 },
   islet: { tint: new THREE.Color(0xd8ecff), amt: 0.12, fog: 1, snow: false, light: 1 },
+  forest: { tint: new THREE.Color(0x9ad8a0), amt: 0.32, fog: 0.62, snow: false, light: 0.86 }, // green-lit misty woodland
 };
 const TINT = new THREE.Color();
 const SKY_DAY = new THREE.Color(0x8fcbff), SKY_DUSK = new THREE.Color(0xff9a6b), SKY_NIGHT = new THREE.Color(0x34405e); // moonlit blue-grey, not black
@@ -57,6 +59,7 @@ export class Game {
   private port!: Seaport;
   private ambient!: Ambient;
   private streetLights!: StreetLights;
+  private floating!: FloatingIslands;
   private nightK = 0;
   private interiors!: Interiors;
   private nearDoor: Door | null = null;
@@ -145,6 +148,7 @@ export class Game {
     this.creatures = new Creatures(this.assets.ramp, this.assets.rig); this.scene.add(this.creatures.group);
     this.port = new Seaport(this.assets); this.scene.add(this.port.group);
     this.ambient = new Ambient(this.assets.ramp, this.npc); this.scene.add(this.ambient.group);
+    this.floating = new FloatingIslands(this.assets.ramp); this.scene.add(this.floating.group);
     this.streetLights = new StreetLights(q.npc >= 150 ? 8 : q.npc >= 70 ? 5 : 3); this.scene.add(this.streetLights.group);
     this.traffic = new TrafficSystem(Math.round(q.traffic * 1.6), this.assets, ['avenue', 'street'], 3.2, q.outlines === 'all');
     this.skyTraffic = new TrafficSystem(Math.max(10, Math.round(q.traffic * 0.6)), this.assets, ['sky'], 3.2, q.outlines === 'all');
@@ -292,6 +296,7 @@ export class Game {
     this.races.update(dt, this.player.x, this.player.z, now / 1000);
     this.creatures.update(dt, this.player.x, this.player.y, this.player.z, now / 1000);
     this.streetLights.update(this.player.x, this.player.z, Math.max(0, Math.min(1, (this.nightK - 0.25) / 0.5)));
+    this.floating.update(dt, now / 1000);
     this.ambient.update(dt, this.player.x, this.player.y, this.player.z, now / 1000, this.gameTime);
     this.port.update(dt, this.player.x, this.player.z, now / 1000, this.nightK);
     this.traffic.update(dt, this.player.x, this.player.z, now / 1000);

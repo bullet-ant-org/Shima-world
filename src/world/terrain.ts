@@ -31,7 +31,7 @@ export function mulberry32(a: number): () => number {
 // ---------------------------------------------------------------------------------------------------------------------
 // Islands. The map spans roughly 7 km x 7 km. Five major islands plus five islets, all separated by open sea.
 // ---------------------------------------------------------------------------------------------------------------------
-export type IslandId = 'valley' | 'city' | 'god' | 'ember' | 'snow' | 'islet';
+export type IslandId = 'valley' | 'city' | 'god' | 'ember' | 'snow' | 'islet' | 'forest';
 export type Zone = IslandId | 'sea';
 export interface Island {
   key: string; id: IslandId; name: string; title: string;
@@ -53,6 +53,7 @@ export const ISLANDS: Island[] = [
   { key: 'fox', id: 'islet', name: 'KITSUNE ISLE', title: 'Kitsune Isle (islet)', cx: 750, cz: 1150, rx: 280, rz: 250, p: 2, ramp: [0.55, 1], spawn: { x: 750, z: 1260 } },
   { key: 'reef', id: 'islet', name: 'CRYSTAL REEF', title: 'Crystal Reef (islet)', cx: -2050, cz: 1020, rx: 240, rz: 230, p: 2, ramp: [0.55, 1], spawn: { x: -2050, z: 1110 } },
   { key: 'arch', id: 'islet', name: 'ARCH ROCKS', title: 'Arch Rocks (islet)', cx: 1250, cz: -1500, rx: 250, rz: 240, p: 2, ramp: [0.55, 1], spawn: { x: 1250, z: -1390 } },
+  { key: 'forest', id: 'forest', name: 'MOSSWOOD FOREST', title: 'Mosswood Forest', cx: -2650, cz: -1800, rx: 640, rz: 580, p: 2, ramp: [0.62, 1], spawn: { x: -2650, z: -1300 } },
   { key: 'cairn', id: 'islet', name: 'CAIRN ISLE', title: 'Cairn Isle (islet)', cx: 1850, cz: -150, rx: 320, rz: 280, p: 2, ramp: [0.55, 1], spawn: { x: 1850, z: -30 } },
 ];
 export const MAJOR = ISLANDS.slice(0, 5);
@@ -131,6 +132,11 @@ function islandParts(isl: Island, x: number, z: number): typeof PART {
       const b = 14 + fbm(x * 0.012, z * 0.012) * 18;
       PART.b = mix(b, 2.4, 1 - sstep(LAKE.r - 40, LAKE.r + 60, r));
       PART.m = range(x, z, SNOW_PEAKS) * sstep(LAKE.r, LAKE.r + 560, r); return PART; // the lake sits in a gentle bowl, peaks stand back
+    }
+    case 'forest': { // rolling wooded hills around a central ridge, a hollow in the middle
+      const r = Math.hypot(x - isl.cx, z - isl.cz);
+      PART.b = 10 + fbm(x * 0.006, z * 0.006) * 26 + Math.sin(x * 0.012) * Math.cos(z * 0.01) * 8 - 10 * Math.exp(-(r * r) / (2 * 90 * 90));
+      PART.m = range(x, z, [[isl.cx - 220, isl.cz - 160, 150, 220], [isl.cx + 240, isl.cz - 60, 120, 200], [isl.cx + 60, isl.cz + 260, 110, 190]]); return PART;
     }
     case 'moon': PART.b = 14 + fbm(x * 0.03, z * 0.03) * 6; PART.m = massif(x, z, isl.cx, isl.cz, 60, 140); return PART;
     case 'fox': PART.b = 10 + fbm(x * 0.03, z * 0.03) * 5; PART.m = massif(x, z, isl.cx - 30, isl.cz - 20, 50, 140); return PART;

@@ -456,6 +456,7 @@ export class World {
     switch (id) {
       case 'valley': k = y < 2.6 && this.coastal(x, z) ? 1 : y > 90 ? 2 * sstep(90, 220, y) : 0; break;
       case 'city': k = 1; break;
+      case 'forest': k = y < 2.4 && this.coastal(x, z) ? 1 : y > 140 ? 2 * sstep(140, 220, y) : 0; break;
       case 'god': k = 2 - 2 * sstep(0.55, 0.85, noise2(x * 0.012 + 3, z * 0.012)) * 0.85; break; // ancient stone, mossy patches
       case 'ember': k = 1; break;
       case 'snow': k = y < 2.2 ? 1 : 3 - sstep(0.55, 0.72, noise2(x * 0.03, z * 0.03)) * sstep(60, 160, y) * 0.9; break;
@@ -467,7 +468,7 @@ export class World {
   /** grass colour at a ground point, or false where none grows (paths, roads, rock, snow, sand, water, city, buildings, fields) */
   grassAt(x: number, z: number, out: THREE.Color): boolean {
     const isl = islandAt(x, z);
-    if (!isl || (isl.id !== 'valley' && isl.id !== 'islet' && isl.id !== 'god')) return false;
+    if (!isl || (isl.id !== 'valley' && isl.id !== 'islet' && isl.id !== 'god' && isl.id !== 'forest')) return false;
     const y = heightAt(x, z); if (y < 2.4) return false;
     const gx = heightAt(x - 1, z) - heightAt(x + 1, z), gz = heightAt(x, z - 1) - heightAt(x, z + 1), grad = Math.hypot(gx, gz) / 2;
     const k = this.terrainKind(x, z, y, grad);
@@ -493,6 +494,14 @@ export class World {
         out.lerp(TMP.setRGB(0.18, 0.28, 0.22), sstep(0.5, 0.8, noise2(x * 0.02 + 4, z * 0.02)) * 0.5);
         if (y > 120) out.lerp(TMP.setRGB(0.62, 0.64, 0.7), sstep(120, 220, y));
         out.lerp(TMP.setRGB(0.32, 0.31, 0.33), cliff * 0.8);
+        return;
+      }
+      case 'forest': { // deep moss and fern greens, darker under the canopy, leaf litter in patches
+        const shadeK = noise2(x * 0.02 + 11, z * 0.02);
+        out.setRGB(0.16 + n * 0.08, 0.36 + n * 0.12, 0.14 + n * 0.05);
+        out.lerp(TMP.setRGB(0.36, 0.3, 0.16), sstep(0.62, 0.8, shadeK) * 0.5);
+        if (y < 2.2 && this.coastal(x, z)) out.setRGB(0.72, 0.68, 0.5);
+        out.lerp(TMP.setRGB(0.36, 0.38, 0.34), cliff * 0.8);
         return;
       }
       case 'city':
@@ -752,6 +761,29 @@ export class World {
       put(pines, A.pine, A.props, false); put(ice, A.rock, A.agents, true); put(cr, A.crystalGeo, A.crystal);
     }
 
+    // ---- Mosswood Forest: a thick mixed forest of tall cedars, firs and broadleaf giants, mossy boulders and ferns ----
+    if (zone === 'forest') {
+      const cedar = new Batch(), fir = new Batch(), broad = new Batch(), moss = new Batch(), fern = new Batch();
+      const n = ring === 0 ? 240 : 90;
+      for (let i = 0; i < n; i++) {
+        const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
+        if (y < 3 || !at(x, z, 'forest') || !clear(x, z, 3)) continue;
+        const k = rnd(), s = 1.0 + rnd() * 1.1, g = 0.75 + rnd() * 0.4;
+        if (k < 0.34) cedar.add(x, y - 0.3, z, rnd() * 6, s * 1.5, s * (1.8 + rnd() * 0.8), s * 1.5, TMP.setRGB(0.55 * g, 0.85 * g, 0.55 * g));
+        else if (k < 0.62) fir.add(x, y - 0.3, z, rnd() * 6, s * 1.3, s * (1.6 + rnd() * 0.6), s * 1.3, TMP.setRGB(0.6 * g, 0.9 * g, 0.62 * g));
+        else broad.add(x, y - 0.2, z, rnd() * 6, s * 2.2, s * 2.4, s * 2.2, TMP.setRGB(0.8 * g, 1.05 * g, 0.8 * g)); // broadleaf giants
+      }
+      if (ring === 0) for (let i = 0; i < 60; i++) {
+        const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK, y = heightAt(x, z);
+        if (y < 3 || !at(x, z, 'forest')) continue;
+        const s = 0.6 + rnd() * 2.2;
+        if (i % 3 === 0) moss.add(x, y + s * 0.15, z, rnd() * 6, s, s * 0.6, s * (0.7 + rnd() * 0.5), TMP.setRGB(0.32, 0.52, 0.28));
+        else fern.add(x, y - 0.1, z, rnd() * 6, 0.3 + rnd() * 0.25, 0.18 + rnd() * 0.15, 0.3 + rnd() * 0.25, TMP.setRGB(0.7, 1.1, 0.7));
+        if (i % 9 === 0) glows.add(x, y + 0.6, z, 0, 0.35, 0.35, 0.35, NEON[2 % NEON.length]); // glowing mushrooms / fireflies
+      }
+      put(cedar, A.cedar, A.props, cast); put(fir, A.pine, A.props, cast); F0.broad ??= streetTreeGeo(0); put(broad, F0.broad.lit, A.props, cast); put(moss, A.rock, A.agents, cast); put(fern, F0.broad.lit, A.props, false);
+    }
+
     // ---- islets: a few trees each, flavoured per island ----
     if (zone === 'islet') {
       const key = islandAt(ox + 64, oz + 64)?.key ?? '';
@@ -773,3 +805,5 @@ export class World {
 
   animatePillars(t: number): void { void t; }
 }
+const F0: { broad?: Pair } = {};
+
